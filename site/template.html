@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Sellpy-Dashboard</title>
+<style>
+.viz-root{
+  color-scheme:light;
+  --bg:#f4f3f0; --surface-1:#fcfcfb; --line:#e4e2dd; --grid:#ecebe7;
+  --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#7a7974;
+  --series-1:#2a78d6; --series-1-soft:#cde2fb; --good:#0ca30c;
+}
+@media (prefers-color-scheme:dark){
+  :root:where(:not([data-theme="light"])) .viz-root{
+    color-scheme:dark;
+    --bg:#111110; --surface-1:#1a1a19; --line:#2e2e2b; --grid:#262624;
+    --text-primary:#f0efec; --text-secondary:#c3c2b7; --text-muted:#8f8e86;
+    --series-1:#3987e5; --series-1-soft:#184f95;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0}
+.viz-root{background:var(--bg);color:var(--text-primary);min-height:100vh;
+  font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:16px 14px 40px}
+.wrap{max-width:980px;margin:0 auto}
+header h1{font-size:22px;margin:0}
+header .sub{color:var(--text-secondary);font-size:13px;margin-top:2px}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 16px}
+.seg{display:inline-flex;background:var(--surface-1);border:1px solid var(--line);border-radius:10px;padding:2px}
+.seg button{font:inherit;font-size:13px;border:0;background:transparent;color:var(--text-secondary);padding:6px 11px;border-radius:8px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--series-1);color:#fff;font-weight:600}
+.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+@media(min-width:720px){.kpis{grid-template-columns:repeat(4,1fr)}}
+.tile{background:var(--surface-1);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.tile .k{font-size:12px;color:var(--text-secondary)}
+.tile .v{font-size:24px;font-weight:700;letter-spacing:-.01em;margin-top:2px;font-variant-numeric:tabular-nums}
+.tile .d{font-size:12px;color:var(--text-muted);margin-top:2px}
+.grid2{display:grid;gap:12px;margin-top:12px}
+@media(min-width:720px){.grid2{grid-template-columns:1fr 1fr}}
+.card{background:var(--surface-1);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:12px}
+.grid2 .card{margin-top:0}
+.card h2{font-size:15px;margin:0}
+.card .note{font-size:12px;color:var(--text-muted);margin:2px 0 10px}
+svg text{fill:var(--text-muted);font-size:11px}
+.hbar{display:grid;grid-template-columns:minmax(90px,38%) 1fr auto;align-items:center;gap:8px;font-size:13px;padding:3px 0;border-radius:6px;cursor:default}
+.hbar:hover{background:var(--grid)}
+.hbar .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary)}
+.hbar .track{height:12px;position:relative}
+.hbar .fill{position:absolute;left:0;top:0;bottom:0;background:var(--series-1);border-radius:0 4px 4px 0;min-width:2px}
+.hbar .val{color:var(--text-secondary);font-variant-numeric:tabular-nums;font-size:12px}
+.tbl-tools{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.tbl-tools input{flex:1;font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--text-primary)}
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--grid);white-space:nowrap}
+th{color:var(--text-secondary);font-weight:600;cursor:pointer;user-select:none;position:sticky;top:0;background:var(--surface-1)}
+th[aria-sort]::after{content:" ▾";color:var(--text-muted)}
+th[aria-sort="ascending"]::after{content:" ▴"}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font-size:11px;padding:1px 6px;border-radius:999px;background:var(--series-1-soft);color:var(--text-primary);margin-left:4px}
+.events{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+@media(min-width:720px){.events{grid-template-columns:repeat(4,1fr)}}
+.ev{border:1px solid var(--grid);border-radius:10px;padding:8px 10px}
+.ev .n{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.ev .t{font-size:12px;color:var(--text-secondary)}
+.ev .w{font-size:11px;color:var(--text-muted)}
+#tip{position:fixed;pointer-events:none;background:var(--text-primary);color:var(--surface-1);font-size:12px;line-height:1.35;
+  padding:6px 9px;border-radius:8px;opacity:0;transition:opacity .1s;z-index:10;max-width:240px}
+footer{color:var(--text-muted);font-size:12px;margin-top:18px}
+.empty{color:var(--text-muted);font-size:13px;padding:8px 0}
+.more{font:inherit;font-size:13px;margin-top:8px;border:1px solid var(--line);background:transparent;color:var(--text-secondary);border-radius:9px;padding:6px 12px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="viz-root">
+<div class="wrap">
+  <header>
+    <h1>Sellpy-Dashboard</h1>
+    <div class="sub" id="stand"></div>
+  </header>
+
+  <div class="filters" role="group" aria-label="Filter">
+    <div class="seg" id="f-range">
+      <button data-v="all" aria-pressed="true">Alles</button>
+      <button data-v="90">90 Tage</button>
+      <button data-v="30">30 Tage</button>
+    </div>
+    <div class="seg" id="f-kids">
+      <button data-v="all" aria-pressed="true">Alle</button>
+      <button data-v="adult">Erwachsene</button>
+      <button data-v="kids">Kinder</button>
+    </div>
+  </div>
+
+  <section class="kpis" id="kpis"></section>
+
+  <div class="card">
+    <h2>Umsatz pro Woche</h2>
+    <div class="note">Summe der Verkaufspreise, Woche ab Montag</div>
+    <div id="c-weeks"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><h2>Top-Marken</h2><div class="note" id="n-brands">nach Umsatz</div><div id="c-brands"></div></div>
+    <div class="card"><h2>Kategorien</h2><div class="note">nach Umsatz</div><div id="c-cats"></div></div>
+    <div class="card"><h2>Preise</h2><div class="note">Anzahl verkaufter Artikel je Preisklasse</div><div id="c-prices"></div></div>
+    <div class="card"><h2>Zeit bis zum Verkauf</h2><div class="note">Tage online, Anzahl Artikel</div><div id="c-days"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>Taschen und Ablauf</h2>
+    <div class="note">aus den übrigen Sellpy-Mails, im gewählten Zeitraum</div>
+    <div class="events" id="events"></div>
+  </div>
+
+  <div class="card">
+    <h2>Alle Verkäufe</h2>
+    <div class="note" id="tbl-note"></div>
+    <div class="tbl-tools"><input id="q" type="search" placeholder="Suchen: Marke, Artikel, Größe …" aria-label="Verkäufe durchsuchen"></div>
+    <div class="tbl-wrap"><table id="tbl"><thead><tr>
+      <th data-k="sold_at" aria-sort="descending">Datum</th>
+      <th data-k="brand">Marke</th>
+      <th data-k="kind">Artikel</th>
+      <th data-k="size">Größe</th>
+      <th data-k="price" class="num">Preis</th>
+      <th data-k="days_listed" class="num">Tage</th>
+      <th data-k="favorites" class="num">♥</th>
+    </tr></thead><tbody></tbody></table></div>
+    <button class="more" id="more" hidden>Mehr anzeigen</button>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+<div id="tip" role="tooltip"></div>
+</div>
+
+<script>
+const D = __DATA__;
+const eur = new Intl.NumberFormat("de-DE", {style:"currency", currency:"EUR"});
+const eur0 = new Intl.NumberFormat("de-DE", {style:"currency", currency:"EUR", maximumFractionDigits:0});
+const num = new Intl.NumberFormat("de-DE", {maximumFractionDigits:1});
+const dFmt = new Intl.DateTimeFormat("de-DE", {day:"2-digit", month:"2-digit", year:"2-digit"});
+const dShort = new Intl.DateTimeFormat("de-DE", {day:"numeric", month:"short"});
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const sum = (a, f) => a.reduce((s, x) => s + (f(x) || 0), 0);
+const avg = (a, f) => { const v = a.map(f).filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
+const DAY = 864e5;
+
+const state = {range:"all", kids:"all", sortK:"sold_at", sortDir:-1, q:"", limit:25};
+D.sales.forEach(s => s.t = new Date(s.sold_at));
+D.events.forEach(e => e.t = new Date(e.at));
+
+/* ---------- Tooltip ---------- */
+const tip = document.getElementById("tip");
+function showTip(ev, html){
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const x = (ev.touches ? ev.touches[0].clientX : ev.clientX), y = (ev.touches ? ev.touches[0].clientY : ev.clientY);
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.max(6, Math.min(innerWidth - w - 6, x - w / 2)) + "px";
+  tip.style.top = Math.max(6, y - h - 12) + "px";
+}
+const hideTip = () => tip.style.opacity = 0;
+document.addEventListener("scroll", hideTip, {passive:true});
+
+/* ---------- Filter ---------- */
+function filtered(){
+  const now = Date.now();
+  return D.sales.filter(s =>
+    (state.range === "all" || now - s.t <= state.range * DAY) &&
+    (state.kids === "all" || (state.kids === "kids") === !!s.kids));
+}
+for (const id of ["f-range", "f-kids"]) {
+  document.getElementById(id).addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    for (const x of e.currentTarget.children) x.setAttribute("aria-pressed", x === b);
+    state[id === "f-range" ? "range" : "kids"] = b.dataset.v === "all" || id === "f-kids" ? b.dataset.v : +b.dataset.v;
+    state.limit = 25; render();
+  });
+}
+
+/* ---------- KPIs ---------- */
+function kpis(S){
+  const rev = sum(S, s => s.price), n = S.length;
+  const co2 = sum(S, s => s.co2_kg), water = sum(S, s => s.water_l);
+  const days = avg(S, s => s.days_listed), favs = sum(S, s => s.favorites);
+  const firstDay = n ? Math.min(...S.map(s => +s.t)) : null;
+  const weeks = firstDay ? Math.max(1, (Date.now() - firstDay) / (7 * DAY)) : 1;
+  const tiles = [
+    ["Umsatz", eur.format(rev), n ? `≈ ${eur0.format(rev / weeks)} pro Woche` : ""],
+    ["Verkaufte Artikel", n.toLocaleString("de-DE"), n ? `≈ ${num.format(n / weeks)} pro Woche` : ""],
+    ["Ø Preis", n ? eur.format(rev / n) : "–", n ? `Median ${eur.format(median(S.map(s => s.price)))}` : ""],
+    ["Ø Tage online", days != null ? Math.round(days) : "–", "bis zum Verkauf"],
+    ["Favoriten", favs.toLocaleString("de-DE"), n ? `Ø ${num.format(favs / n)} je Artikel` : ""],
+    ["Teuerster Verkauf", n ? eur.format(Math.max(...S.map(s => s.price))) : "–", n ? esc(S.reduce((a, b) => b.price > a.price ? b : a).brand) : ""],
+    ["CO₂ gespart", `${num.format(co2)} kg`, "laut Sellpy"],
+    ["Wasser gespart", water >= 1000 ? `${num.format(water / 1000)} m³` : `${Math.round(water)} l`, "laut Sellpy"],
+  ];
+  document.getElementById("kpis").innerHTML = tiles.map(([k, v, d]) =>
+    `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
+}
+function median(a){ if (!a.length) return 0; const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; }
+
+/* ---------- Wochen-Balken (SVG) ---------- */
+function monday(d){ const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+function weeks(S){
+  const el = document.getElementById("c-weeks");
+  if (!S.length) { el.innerHTML = '<div class="empty">Keine Verkäufe im Zeitraum.</div>'; return; }
+  const start = monday(Math.min(...S.map(s => +s.t))), end = monday(Date.now());
+  const buckets = [];
+  for (let t = new Date(start); t <= end; t.setDate(t.getDate() + 7)) buckets.push({t:new Date(t), rev:0, n:0});
+  for (const s of S) { const i = Math.round((monday(s.t) - start) / (7 * DAY)); if (buckets[i]) { buckets[i].rev += s.price; buckets[i].n++; } }
+  const W = Math.max(320, el.clientWidth || 600), H = 190, L = 40, R = 8, T = 10, B = 24;
+  const max = Math.max(...buckets.map(b => b.rev), 1), nice = niceMax(max);
+  const bw = (W - L - R) / buckets.length, gap = Math.min(4, bw * 0.25);
+  const y = v => T + (H - T - B) * (1 - v / nice);
+  let g = "";
+  for (let i = 0; i <= 4; i++) { const v = nice * i / 4, yy = y(v);
+    g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--grid)"/>` +
+         `<text x="${L - 6}" y="${yy + 4}" text-anchor="end">${eur0.format(v)}</text>`; }
+  const every = Math.ceil(buckets.length / Math.floor((W - L) / 56));
+  buckets.forEach((b, i) => {
+    const x = L + i * bw + gap / 2, w = Math.max(1, bw - gap), h = (H - T - B) - (y(b.rev) - T);
+    if (b.rev > 0) g += barPath(x, y(b.rev), w, h);
+    g += `<rect class="hit" data-i="${i}" x="${L + i * bw}" y="${T}" width="${bw}" height="${H - T - B}" fill="transparent"/>`;
+    if (i % every === 0) g += `<text x="${x + w / 2}" y="${H - 7}" text-anchor="middle">${dShort.format(b.t)}</text>`;
+  });
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Umsatz pro Woche">${g}</svg>`;
+  el.querySelectorAll(".hit").forEach(r => {
+    const b = buckets[+r.dataset.i];
+    const f = e => showTip(e, `<b>Woche ab ${dShort.format(b.t)}</b><br>${eur.format(b.rev)} · ${b.n} Artikel`);
+    r.addEventListener("mousemove", f); r.addEventListener("touchstart", f, {passive:true});
+    r.addEventListener("mouseleave", hideTip);
+  });
+}
+function barPath(x, y, w, h){ const r = Math.min(4, w / 2, h);
+  return `<path d="M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z" fill="var(--series-1)"/>`; }
+function niceMax(v){ const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p; return 10 * p; }
+
+/* ---------- Horizontale Balken (HTML) ---------- */
+function hbars(id, rows, fmt, tipFmt){
+  const el = document.getElementById(id);
+  if (!rows.length) { el.innerHTML = '<div class="empty">Keine Daten.</div>'; return; }
+  const max = Math.max(...rows.map(r => r.v), 1e-9);
+  el.innerHTML = rows.map((r, i) => `<div class="hbar" data-i="${i}"><div class="lab" title="${esc(r.label)}">${esc(r.label)}</div>` +
+    `<div class="track"><div class="fill" style="width:${(r.v / max * 100).toFixed(1)}%"></div></div><div class="val">${fmt(r)}</div></div>`).join("");
+  el.querySelectorAll(".hbar").forEach(row => {
+    const r = rows[+row.dataset.i], f = e => showTip(e, tipFmt(r));
+    row.addEventListener("mousemove", f); row.addEventListener("touchstart", f, {passive:true});
+    row.addEventListener("mouseleave", hideTip);
+  });
+}
+function groupBy(S, key){
+  const m = new Map();
+  for (const s of S) { const k = key(s); const g = m.get(k) || {label:k, v:0, n:0, favs:0}; g.v += s.price; g.n++; g.favs += s.favorites || 0; m.set(k, g); }
+  return [...m.values()].sort((a, b) => b.v - a.v);
+}
+function buckets(S, f, edges, unit){
+  const rows = edges.slice(0, -1).map((lo, i) => {
+    const hi = edges[i + 1];
+    const label = hi === Infinity ? `ab ${lo}${unit}` : `${lo}–${hi}${unit}`;
+    const items = S.filter(s => { const v = f(s); return v != null && v >= lo && v < hi; });
+    return {label, v:items.length, n:items.length, rev:sum(items, s => s.price)};
+  });
+  return rows;
+}
+
+/* ---------- Ereignisse ---------- */
+const EV = [["bag_ordered", "Taschen bestellt"], ["bag_arrived", "Taschen im Lager"], ["sale_started", "Verkaufsstarts"],
+            ["new_listings", "Anzeigen-Hinweise"], ["last_chance", "„Letzte Chance“"], ["sale_ended", "Verkäufe beendet"],
+            ["bag_sent", "Taschen versandt"], ["purchase", "Eigene Käufe"]];
+function events(){
+  const now = Date.now();
+  const E = D.events.filter(e => state.range === "all" || now - e.t <= state.range * DAY);
+  document.getElementById("events").innerHTML = EV.map(([k, t]) => {
+    const xs = E.filter(e => e.type === k); const last = xs.length ? xs[xs.length - 1].t : null;
+    return `<div class="ev"><div class="n">${xs.length}</div><div class="t">${t}</div><div class="w">${last ? "zuletzt " + dFmt.format(last) : "&nbsp;"}</div></div>`;
+  }).join("");
+}
+
+/* ---------- Tabelle ---------- */
+function table(S){
+  const q = state.q.trim().toLowerCase();
+  let rows = q ? S.filter(s => `${s.brand} ${s.kind} ${s.size} ${s.category}`.toLowerCase().includes(q)) : [...S];
+  const k = state.sortK, dir = state.sortDir;
+  rows.sort((a, b) => { const x = a[k] ?? "", y = b[k] ?? ""; return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "de")) * dir; });
+  document.querySelector("#tbl tbody").innerHTML = rows.slice(0, state.limit).map(s =>
+    `<tr><td>${dFmt.format(s.t)}</td><td>${esc(s.brand)}</td><td>${esc(s.kind)}${s.kids ? '<span class="pill">Kind</span>' : ""}</td>` +
+    `<td>${esc(s.size || "")}</td><td class="num">${eur.format(s.price)}</td><td class="num">${s.days_listed ?? "–"}</td><td class="num">${s.favorites ?? "–"}</td></tr>`).join("")
+    || `<tr><td colspan="7" class="empty">Keine Treffer.</td></tr>`;
+  document.getElementById("tbl-note").textContent = `${rows.length} Verkäufe · ${eur.format(sum(rows, s => s.price))}`;
+  const more = document.getElementById("more");
+  more.hidden = rows.length <= state.limit; more.textContent = `Alle ${rows.length} anzeigen`;
+}
+document.querySelectorAll("#tbl th").forEach(th => th.addEventListener("click", () => {
+  const k = th.dataset.k;
+  state.sortDir = state.sortK === k ? -state.sortDir : (["brand", "kind", "size"].includes(k) ? 1 : -1);
+  state.sortK = k;
+  document.querySelectorAll("#tbl th").forEach(x => x.removeAttribute("aria-sort"));
+  th.setAttribute("aria-sort", state.sortDir > 0 ? "ascending" : "descending");
+  table(filtered());
+}));
+document.getElementById("q").addEventListener("input", e => { state.q = e.target.value; table(filtered()); });
+document.getElementById("more").addEventListener("click", () => { state.limit = 1e9; table(filtered()); });
+
+/* ---------- Render ---------- */
+function render(){
+  const S = filtered();
+  kpis(S); weeks(S); events(); table(S);
+  const br = groupBy(S, s => s.brand);
+  document.getElementById("n-brands").textContent = br.length > 10 ? `nach Umsatz, Top 10 von ${br.length}` : "nach Umsatz";
+  hbars("c-brands", br.slice(0, 10), r => eur.format(r.v),
+    r => `<b>${esc(r.label)}</b><br>${eur.format(r.v)} · ${r.n} Artikel<br>Ø ${eur.format(r.v / r.n)}`);
+  hbars("c-cats", groupBy(S, s => s.category), r => eur.format(r.v),
+    r => `<b>${esc(r.label)}</b><br>${eur.format(r.v)} · ${r.n} Artikel<br>Ø ${eur.format(r.v / r.n)}`);
+  hbars("c-prices", buckets(S, s => s.price, [0, 3, 5, 8, 12, 20, 35, Infinity], " €"), r => r.n,
+    r => `<b>${esc(r.label)}</b><br>${r.n} Artikel · ${eur.format(r.rev)}`);
+  hbars("c-days", buckets(S, s => s.days_listed, [0, 14, 30, 60, 90, 120, 180, Infinity], " T"), r => r.n,
+    r => `<b>${esc(r.label)}</b><br>${r.n} Artikel · ${eur.format(r.rev)}`);
+}
+const built = new Date(D.built_at);
+document.getElementById("stand").textContent = `Stand ${dFmt.format(built)}, ${built.toLocaleTimeString("de-DE", {hour:"2-digit", minute:"2-digit"})} Uhr · ${D.sales.length} Verkäufe insgesamt`;
+document.getElementById("foot").innerHTML =
+  "Quelle: Sellpy-Verkaufsmails in Gmail. Beträge sind Verkaufspreise, nicht dein Erlös nach Sellpy-Provision." +
+  (D.meta.parse_failed ? ` · ${D.meta.parse_failed} Verkaufsmail(s) konnten nicht gelesen werden.` : "");
+render();
+let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => weeks(filtered()), 150); });
+</script>
+</body>
+</html>
