@@ -1,0 +1,32 @@
+name: Sellpy erkunden (einmalig)
+
+# Startet von selbst, wenn sich das Erkundungs-Script ändert, oder per "Run workflow".
+on:
+  push:
+    paths:
+      - scripts/explore_sellpy.py
+      - .github/workflows/explore.yml
+      - explore/trigger.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  explore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Abhängigkeiten
+        run: |
+          pip install cryptography==43.0.3 playwright==1.48.0
+          python -m playwright install --with-deps chromium
+      - name: Bei Sellpy anmelden und aufzeichnen (verschlüsselt)
+        env:
+          SELLPY_USER: ${{ secrets.SELLPY_USER }}
+          SELLPY_PASS: ${{ secrets.SELLPY_PASS }}
+        run: python scripts/explore_sellpy.py
