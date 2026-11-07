@@ -193,7 +193,7 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
     <div class="grid2">
       <div class="card"><h2>Marken</h2><div class="note" id="n-wbrands">aktuelle Favoriten, nach Anzahl</div><div id="c-wbrands"></div></div>
       <div class="card"><h2>Kategorien</h2><div class="note">aktuelle Favoriten, nach Anzahl</div><div id="c-wcats"></div></div>
-      <div class="card"><h2>Für wen</h2><div class="note">aktuelle Favoriten</div><div id="c-wdemo"></div></div>
+      <div class="card"><h2>Für wen</h2><div class="note">aktuelle Favoriten, Anzahl · Anteil · Preise zusammen</div><div id="c-wdemo"></div></div>
       <div class="card"><h2>Preise</h2><div class="note">aktuelle Favoriten je Preisklasse</div><div id="c-wprice"></div></div>
       <div class="card"><h2>Größen</h2><div class="note" id="n-wsizes">aktuelle Favoriten, nach Anzahl</div><div id="c-wsizes"></div></div>
       <div class="card"><h2>Zustand</h2><div class="note">aktuelle Favoriten</div><div id="c-wcond"></div></div>
@@ -444,7 +444,10 @@ function renderBuys(){
   document.getElementById("n-bbrands").textContent = br.length > 10 ? `behalten, nach Wert · Top 10 von ${br.length}` : "behalten, nach Wert";
   hbars("c-bbrands", br.slice(0, 10), r => eur.format(r.v), tipB);
   hbars("c-bcats", g(kept, p => p.category), r => eur.format(r.v), tipB);
-  hbars("c-bdemo", g(kept, demoOf).map(r => ({...r, v:r.n})), r => r.n, tipB);
+  const bd = g(kept, demoOf).map(r => ({...r, amt:r.v, v:r.n})), bdN = sum(bd, r => r.n), bdA = sum(bd, r => r.amt);
+  document.querySelector("#c-bdemo").previousElementSibling.textContent = "behalten, Anzahl · Anteil · Wert";
+  hbars("c-bdemo", bd, r => `${r.n} · ${pct(r.n / bdN)} · ${eur0.format(r.amt)}`,
+    r => `<b>${esc(r.label)}</b><br>${r.n} Artikel (${pct(r.n / bdN)}) · ${eur.format(r.amt)} (${bdA ? pct(r.amt / bdA) : "–"} des Werts)`);
   hbars("c-bstatus", g(P, p => p.status).map(r => ({...r, v:r.n})), r => r.n, r => `<b>${esc(r.label)}</b><br>${r.n} Artikel · ${eur.format(r.v)}`);
   const cats = new Map(); for (const p of P) { const c = cats.get(p.category) || {label:p.category, n:0, b:0}; c.n++; if (p.status !== "Behalten") c.b++; cats.set(p.category, c); }
   hbars("c-bret", [...cats.values()].filter(c => c.n >= 3).map(c => ({...c, v:c.b / c.n})).sort((a, b) => b.v - a.v), r => pct(r.v),
@@ -533,7 +536,9 @@ function renderFavs(){
   document.getElementById("n-wbrands").textContent = br.length > 10 ? `aktuelle Favoriten, Top 10 von ${br.length}` : "aktuelle Favoriten, nach Anzahl";
   hbars("c-wbrands", br.slice(0, 10), r => r.v, tip);
   hbars("c-wcats", g(known, f => f.category), r => r.v, tip);
-  hbars("c-wdemo", g(known, f => f.demography || (f.kids ? "Kinder" : "Sonstige")), r => r.v, tip);
+  const wd = g(known, f => f.demography || (f.kids ? "Kinder" : "Sonstige")), wdN = sum(wd, r => r.v), wdA = sum(wd, r => r.price);
+  hbars("c-wdemo", wd, r => `${r.v} · ${pct(r.v / wdN)} · ${eur0.format(r.price)}`,
+    r => `<b>${esc(r.label)}</b><br>${r.v} Favoriten (${pct(r.v / wdN)}) · Preise zusammen ${eur0.format(r.price)} (${wdA ? pct(r.price / wdA) : "–"} des Werts)`);
   const pb = buckets(priced, f => f.price, [0, 5, 10, 20, 35, 60, 100, Infinity], " €").map(r => ({...r, v:r.n}));
   hbars("c-wprice", pb, r => r.n, r => `<b>${esc(r.label)}</b><br>${r.n} Favoriten`);
   const sz = g(known, f => f.size);
