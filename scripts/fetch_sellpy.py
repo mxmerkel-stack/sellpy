@@ -5,7 +5,7 @@ Ablauf:
   1. Anmeldung im Browser (Playwright, headless) mit SELLPY_USER / SELLPY_PASS – genau wie von Hand.
   2. Mit der Sitzung des Browsers werden die Sellpy-GraphQL-Abfragen gestellt, die auch die
      Seite "Meine Verkäufe" nutzt: Artikel, Buchungen je Artikel (Verkauf, Provision, Gebühren),
-     Taschen und Sellpy-Credits.
+     Taschen, Sellpy-Credits und eigene Bestellungen (Käufe).
   3. Alles landet in data/sellpy.json (wird im Workflow nicht gespeichert) und im verschlüsselten
      Verlauf data/history.enc.
 
@@ -157,6 +157,15 @@ def main():
             pageInfo { hasNextPage endCursor }
             edges { node { objectId type delta createdAt } }
           } }""", "creditTransactions", {"uid": uid})
+        orders = s.pages("""query O($uid: ID!, $first: Int, $after: String) {
+          orders(where: {user: {have: {objectId: {equalTo: $uid}}}}, first: $first, after: $after, order: createdAt_DESC) {
+            pageInfo { hasNextPage endCursor }
+            edges { node { objectId createdAt status orderPayment freightPayment isFastHandling datePaid dateDelivered dateCanceled
+              creditPaymentCapture { amount currency }
+              itemPayments { ... on Element { value } }
+              items { ... on Item { objectId itemStatus localizedMetadata(locale: "de") } } } }
+          } }""", "orders", {"uid": uid})
+        print(f"Bestellungen: {len(orders)}")
         credit_now = s.q('query { currentUserCredit(currency: "EUR") }', allow_errors=True).get("data", {}).get("currentUserCredit")
         print(f"Credit-Buchungen: {len(credits)}")
         browser.close()
@@ -165,7 +174,7 @@ def main():
     print(f"Artikel-Merkmale: {', '.join(meta_keys)}")
 
     snapshot = {"fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "items": items, "balance": balance,
-                "bags": bags, "credits": credits, "credit_now": credit_now, "item_fields": fields}
+                "bags": bags, "credits": credits, "orders": orders, "credit_now": credit_now, "item_fields": fields}
 
     # Verlauf: Artikel und Buchungen werden zusammengeführt, damit nichts verloren geht
     hist_path = DATA / "history.enc"
@@ -174,7 +183,7 @@ def main():
     except Exception:
         print("Verlauf nicht lesbar (anderes Seitenpasswort?) – starte neu.")
         hist = {}
-    for key in ("items", "balance", "bags", "credits"):
+    for key in ("items", "balance", "bags", "credits", "orders"):
         merged = {x["objectId"]: x for x in hist.get(key, [])}
         merged.update({x["objectId"]: x for x in snapshot[key]})
         snapshot[key] = list(merged.values())
