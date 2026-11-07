@@ -1,4 +1,5 @@
 name: Dashboard aktualisieren
+# Veröffentlicht auf GitHub Pages: https://mxmerkel-stack.github.io/sellpy/
 
 on:
   schedule:
