@@ -158,7 +158,8 @@ def transform(raw):
         total = (o.get("orderPayment") or {}).get("amount") or 0
         li = o.get("lineItems") or []
         cents = lambda x: ((x or {}).get("amount") or 0) / 100  # noqa: E731
-        refunded = sum(cents(l.get("amountIncludingTax")) for l in li if l.get("type") in ("ITEM_REFUND", "FREIGHT_REFUND"))
+        # Sellpy bucht Erstattungen negativ, Rücksendekosten (CLAIM_FREIGHT) positiv
+        refunded = -sum(cents(l.get("amountIncludingTax")) for l in li if l.get("type") in ("ITEM_REFUND", "FREIGHT_REFUND"))
         return_fees = sum(cents(l.get("amountIncludingTax")) for l in li if l.get("type") == "CLAIM_FREIGHT")
         o_items = []
         for it in o.get("items") or []:
@@ -182,7 +183,8 @@ def transform(raw):
                        "credits": ((o.get("creditPaymentCapture") or {}).get("amount") or 0) / 100,
                        "items": len(o_items), "kept": len(kept), "kept_value": sum(r["price"] for r in kept),
                        "returned": len(back), "claimed": sum(1 for r in o_items if r["status"] == "Reklamiert"), "returned_value": sum(r["price"] for r in back),
-                       "refunded": refunded, "return_fees": return_fees, "has_lines": bool(li),
+                       "refunded": refunded if li else sum(r["price"] for r in back), "return_fees": return_fees,
+                       "effective": (0 if canceled else total) - (refunded if li else sum(r["price"] for r in back)) + return_fees,
                        "status": "Storniert" if canceled else ("Geliefert" if o.get("dateDelivered") else "Unterwegs"),
                        "kids": bool(o_items) and all(r["kids"] for r in o_items)})
     credits = [{"at": c["createdAt"], "type": c["type"], "amount": c["delta"]["amount"] / 100} for c in raw.get("credits", [])]
