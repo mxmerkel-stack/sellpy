@@ -147,8 +147,8 @@ def transform(raw):
                      "gross": sum(s["price"] for s in bs), "net": sum(s["net"] or 0 for s in bs)})
     purchases, orders = [], []
     # Rücksendungen: Sellpy führt sie als "itemClaims"; abgelehnte zählen nicht
-    returned_ids = {c["item"]["objectId"] for c in raw.get("claims", [])
-                    if c.get("item") and str(c.get("status", "")).lower() not in REJECTED_CLAIMS}
+    claim_type = {c["item"]["objectId"]: c.get("type") for c in raw.get("claims", [])
+                  if c.get("item") and str(c.get("status", "")).lower() not in REJECTED_CLAIMS}
     for o in raw.get("orders", []):
         pay = {}
         for el in o.get("itemPayments") or []:
@@ -167,21 +167,21 @@ def transform(raw):
             kind = flat(meta.get("type")) or "Artikel"
             if meta.get("title"):
                 kind = f"{kind}: {flat(meta['title'])}"
-            back = it["objectId"] in returned_ids
+            ct = claim_type.get(it["objectId"])
             row = {"order": o["objectId"], "at": o.get("datePaid") or o.get("createdAt"),
                    "brand": flat(meta.get("brand")) or "Ohne Marke", "kind": kind, "size": nice_size(raw_size),
                    "condition": flat(meta.get("condition")), "category": category(flat(meta.get("type"))),
                    "kids": is_kids(meta, raw_size), "price": pay.get(it["objectId"]) or 0,
-                   "status": "Storniert" if canceled else ("Zurückgeschickt" if back else "Behalten")}
+                   "status": "Storniert" if canceled else ("Behalten" if not ct else ("Reklamiert" if ct == "claim" else "Zurückgeschickt"))}
             o_items.append(row)
             purchases.append(row)
         kept = [r for r in o_items if r["status"] == "Behalten"]
-        back = [r for r in o_items if r["status"] == "Zurückgeschickt"]
+        back = [r for r in o_items if r["status"] in ("Zurückgeschickt", "Reklamiert")]
         orders.append({"id": o["objectId"], "at": o.get("datePaid") or o.get("createdAt"), "total": 0 if canceled else total,
                        "freight": (o.get("freightPayment") or {}).get("amount") or 0, "fast": bool(o.get("isFastHandling")),
                        "credits": ((o.get("creditPaymentCapture") or {}).get("amount") or 0) / 100,
                        "items": len(o_items), "kept": len(kept), "kept_value": sum(r["price"] for r in kept),
-                       "returned": len(back), "returned_value": sum(r["price"] for r in back),
+                       "returned": len(back), "claimed": sum(1 for r in o_items if r["status"] == "Reklamiert"), "returned_value": sum(r["price"] for r in back),
                        "refunded": refunded, "return_fees": return_fees, "has_lines": bool(li),
                        "status": "Storniert" if canceled else ("Geliefert" if o.get("dateDelivered") else "Unterwegs"),
                        "kids": bool(o_items) and all(r["kids"] for r in o_items)})
