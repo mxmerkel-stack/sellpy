@@ -16,23 +16,27 @@ STATUS = {
     "awaitingApproval": "Wartet auf Freigabe", "awaitingChangeRequestReview": "Prüfung läuft",
     "returnerad": "Zurückgeschickt", "återlämnad": "Zurückgeschickt", "sentBack": "Zurückgeschickt",
     "rejected": "Abgelehnt", "nekad": "Abgelehnt", "lost": "Verloren", "processing": "In Bearbeitung",
+    "skänktDirekt": "Gespendet", "registrerad": "In Bearbeitung", "tillbakaskickadDirekt": "Zurückgeschickt",
+    "tillbakaskickad": "Zurückgeschickt", "borttagen": "Entfernt",
 }
 SOLD = {"betald", "såld"}
 KIDS_SIZES = set(range(62, 177, 6))
 CATEGORIES = [
-    ("Jacken & Mäntel", ["jacke", "mantel", "weste", "parka", "blazer", "sakko", "anorak", "fleece"]),
+    ("Bodys & Strampler", ["body", "strampler", "overall", "jumpsuit", "spucktuch", "lätzchen", "tragetuch"]),
+    ("Jacken & Mäntel", ["jacke", "mantel", "weste", "parka", "blazer", "sakko", "anorak", "fleece", "anzug"]),
     ("Hemden & Blusen", ["hemd", "bluse"]),
     ("Pullover & Strick", ["pullover", "pulli", "strick", "cardigan", "sweat", "hoodie", "kapuzen"]),
-    ("Hosen & Jeans", ["hose", "jeans", "chino", "shorts", "leggings"]),
+    ("Hosen & Jeans", ["hose", "jeans", "chino", "shorts", "leggings", "jeggings"]),
     ("Shirts & Tops", ["shirt", "top", "polo", "longsleeve"]),
     ("Kleider & Röcke", ["kleid", "rock"]),
-    ("Schuhe", ["schuh", "sneaker", "stiefel", "sandale", "boots", "pumps", "slipper"]),
-    ("Accessoires", ["tasche", "gürtel", "mütze", "schal", "krawatte", "armband", "kette", "uhr", "cap", "hut",
-                     "handschuh", "sonnenbrille", "rucksack", "geldbörse"]),
-    ("Beauty & Duft", ["parfum", "parfüm", "eau de", "creme", "kosmetik", "pflege"]),
+    ("Schuhe", ["schuh", "sneaker", "stiefel", "sandale", "boots", "pumps", "slipper", "schnürer", "espadrilles"]),
+    ("Accessoires", ["tasche", "gürtel", "mütze", "schal", "krawatte", "armband", "armbänder", "kette", "uhr", "cap",
+                     "hut", "handschuh", "fäustling", "sonnenbrille", "rucksack", "geldbörse", "haarband", "beutel", "helm"]),
+    ("Beauty & Duft", ["parfum", "parfüm", "eau de", "creme", "kosmetik", "pflege", "duft"]),
     ("Baby & Kind", ["baby", "kinderwagen", "adapter", "babyschale", "spielzeug", "puzzle", "monitor"]),
-    ("Sport & Freizeit", ["sport", "fahrrad", "klimmzug", "hantel", "yoga", "ball", "camping"]),
-    ("Haushalt & Technik", ["lampe", "küche", "kabel", "lautsprecher", "kopfhörer", "auto", "werkzeug", "deko", "vase"]),
+    ("Sport & Freizeit", ["sport", "fahrrad", "klimmzug", "hantel", "yoga", "ball", "camping", "training"]),
+    ("Haushalt & Technik", ["lampe", "küche", "kabel", "lautsprecher", "kopfhörer", "auto", "werkzeug", "deko", "vase",
+                            "radio", "maus", "vorhang", "kissen", "decke", "bürste", "fontäne", "screen"]),
 ]
 
 
@@ -51,13 +55,31 @@ def flat(v):
 
 def category(kind):
     s = (kind or "").lower()
+    if s.strip() == "set":
+        return "Bodys & Strampler"
     for name, words in CATEGORIES:
         if any(w in s for w in words):
             return name
     return "Sonstiges"
 
 
+def nice_size(raw):
+    """'CHILD-CM-86/92' -> '86/92', 'SHOES-EU-23' -> 'EU 23', 'ADULT-INT-L' -> 'L'."""
+    if not raw:
+        return ""
+    parts = raw.split("-")
+    if len(parts) >= 3 and parts[0].isupper():
+        val = "-".join(parts[2:])
+        return f"EU {val}" if parts[0] == "SHOES" else val
+    return raw
+
+
 def is_kids(meta, size):
+    demo = flat(meta.get("demography")).lower()
+    if demo:
+        return any(w in demo for w in ("kinder", "mädchen", "jungen", "baby"))
+    if str(size).startswith("CHILD"):
+        return True
     text = " ".join(flat(v) for v in meta.values()).lower()
     if re.search(r"\b(kinder|kind|baby|kids|mädchen|jungen)\b", text):
         return True
@@ -88,15 +110,18 @@ def transform(raw):
         kind = flat(meta.get("type")) or "Artikel"
         if meta.get("model"):
             kind = f"{kind}, {flat(meta['model'])}"
-        size = flat(meta.get("size") or meta.get("sizeLabel") or "")
+        raw_size = flat(meta.get("size") or meta.get("sizeBottom") or meta.get("sizeEstimated") or "")
+        size = nice_size(raw_size)
         row = {"id": it["objectId"], "brand": brand, "kind": kind, "size": size, "condition": flat(meta.get("condition")),
-               "category": category(flat(meta.get("type"))), "kids": is_kids(meta, size), "price": price,
+               "category": category(flat(meta.get("type"))), "kids": is_kids(meta, raw_size), "demography": flat(meta.get("demography")), "price": price,
                "status": STATUS.get(status, status or "Unbekannt"), "bag": (it.get("bag") or {}).get("objectId"),
                "created_at": it.get("createdAt")}
         items.append(row)
         if sold_tx or status in SOLD:
-            sold_at = it.get("paidAt") or (sold_tx[0]["createdAt"] if sold_tx else None) or it.get("createdAt")
-            start = it.get("publishedAt") or it.get("saleStartedAt") or it.get("putUpForSaleAt") or it.get("createdAt")
+            sold_at = it.get("paidAt") or (sold_tx[0]["createdAt"] if sold_tx else None)
+            if not sold_at:  # gerade verkauft, noch nicht gebucht
+                sold_at = raw.get("fetched_at")
+            start = it.get("putOnShelfAt") or it.get("assortedAt") or it.get("createdAt")
             gross = amt("itemSold") or price
             net = sum(t["delta"]["amount"] for t in txs) / 100 if txs else None
             d0, d1 = day(start), day(sold_at)
@@ -104,6 +129,10 @@ def transform(raw):
                           "sold_at": sold_at, "days_listed": (d1 - d0).days if d0 and d1 else None,
                           "bag_date": bag_dates.get(row["bag"])})
 
+    sold_ids = {s["id"] for s in sales}
+    unsold_fees = [{"at": t["createdAt"], "amount": t["delta"]["amount"] / 100,
+                    "kids": next((i["kids"] for i in items if i["id"] == t["item"]["objectId"]), False)}
+                   for t in raw.get("balance", []) if t.get("item") and t["item"]["objectId"] not in sold_ids]
     payouts = [{"at": t["createdAt"], "amount": -t["delta"]["amount"] / 100}
                for t in raw.get("balance", []) if t["type"] == "salePayout"]
     other_types = sorted({t["type"] for t in raw.get("balance", [])} - {"itemSold", "itemCommission", "itemAdFee", "salePayout"})
@@ -116,13 +145,13 @@ def transform(raw):
                      "gross": sum(s["price"] for s in bs), "net": sum(s["net"] or 0 for s in bs)})
     credits = [{"at": c["createdAt"], "type": c["type"], "amount": c["delta"]["amount"] / 100} for c in raw.get("credits", [])]
     return {"items": items, "sales": sorted(sales, key=lambda s: s["sold_at"] or ""), "bags": sorted(bags, key=lambda b: b["created_at"] or ""),
-            "payouts": payouts, "credits": credits, "credit_now": raw.get("credit_now"), "other_tx_types": other_types,
+            "payouts": payouts, "unsold_fees": unsold_fees, "credits": credits, "credit_now": raw.get("credit_now"), "other_tx_types": other_types,
             "fetched_at": raw.get("fetched_at")}
 
 
 def main():
     raw = read("sellpy.json", None)
-    payload = transform(raw) if raw else read("sample.json", {})
+    payload = transform(raw) if raw else transform({})
     payload["built_at"] = datetime.now(timezone.utc).isoformat()
     blob = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
     html = (ROOT / "site" / "template.html").read_text().replace("__DATA__", blob, 1)

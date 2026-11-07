@@ -97,8 +97,8 @@ footer{color:var(--text-muted);font-size:12px;margin-top:18px}
   <section class="kpis" id="kpis"></section>
 
   <div class="card">
-    <h2>Erlös pro Woche</h2>
-    <div class="note">Netto nach Sellpy-Provision und Gebühren, Woche ab Montag</div>
+    <h2 id="weeks-title">Erlös pro Woche</h2>
+    <div class="note" id="weeks-note"></div>
     <div id="c-weeks"></div>
   </div>
 
@@ -191,8 +191,11 @@ function kpis(S){
   const firstDay = n ? Math.min(...S.map(s => +s.t)) : null;
   const weeks = firstDay ? Math.max(1, (Date.now() - firstDay) / (7 * DAY)) : 1;
   const online = D.items.filter(i => i.status === "Online" && kidsOk(i));
+  const now = Date.now();
+  const fees = sum((D.unsold_fees || []).filter(f => (state.range === "all" || now - new Date(f.at) <= state.range * DAY) && kidsOk(f)), f => f.amount);
+  const total = net + fees;
   const tiles = [
-    ["Netto-Erlös", eur.format(net), n ? `≈ ${eur.format(net / weeks)} pro Woche` : ""],
+    ["Netto-Erlös", eur.format(total), (n ? `≈ ${eur.format(total / weeks)} pro Woche` : "") + (fees ? ` · ${eur.format(-fees)} Gebühren für Unverkauftes abgezogen` : "")],
     ["Verkaufspreise", eur.format(gross), gWith ? `davon ${pct(sum(withNet, s => s.net) / gWith)} bei dir` : ""],
     ["Verkaufte Artikel", n.toLocaleString("de-DE"), n ? `≈ ${num.format(n / weeks)} pro Woche` : ""],
     ["Ø netto je Artikel", n ? eur.format(net / n) : "–", n ? `Ø Preis ${eur.format(gross / n)}` : ""],
@@ -210,17 +213,24 @@ const kidsOk = i => state.kids === "all" || (state.kids === "kids") === !!i.kids
 
 /* ---------- Wochen-Balken (SVG) ---------- */
 function monday(d){ const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+function monthStart(d){ const x = new Date(d); return new Date(x.getFullYear(), x.getMonth(), 1); }
 function weeks(S){
   const el = document.getElementById("c-weeks");
   if (!S.length) { el.innerHTML = '<div class="empty">Keine Verkäufe im Zeitraum.</div>'; return; }
-  const start = monday(Math.min(...S.map(s => +s.t))), end = monday(Date.now());
-  const buckets = [];
-  for (let t = new Date(start); t <= end; t.setDate(t.getDate() + 7)) buckets.push({t:new Date(t), rev:0, gross:0, n:0});
-  for (const s of S) { const i = Math.round((monday(s.t) - start) / (7 * DAY)); if (buckets[i]) { buckets[i].rev += (s.net ?? 0); buckets[i].gross += s.price; buckets[i].n++; } }
+  const first = Math.min(...S.map(s => +s.t));
+  const monthly = (Date.now() - first) / (7 * DAY) > 26;
+  document.getElementById("weeks-title").textContent = monthly ? "Erlös pro Monat" : "Erlös pro Woche";
+  document.getElementById("weeks-note").textContent = "Netto nach Sellpy-Provision und Gebühren" + (monthly ? "" : ", Woche ab Montag");
+  const key = monthly ? monthStart : monday, buckets = [], idx = new Map();
+  for (let t = key(first); t <= Date.now(); t = monthly ? new Date(t.getFullYear(), t.getMonth() + 1, 1) : new Date(+t + 7 * DAY)) {
+    idx.set(+t, buckets.length); buckets.push({t, rev:0, gross:0, n:0});
+  }
+  for (const s of S) { const b = buckets[idx.get(+key(s.t))]; if (b) { b.rev += (s.net ?? 0); b.gross += s.price; b.n++; } }
   const W = Math.max(320, el.clientWidth || 600), H = 190, L = 40, R = 8, T = 10, B = 24;
   const max = Math.max(...buckets.map(b => b.rev), 1), nice = niceMax(max);
   const bw = (W - L - R) / buckets.length, gap = Math.min(4, bw * 0.25);
   const y = v => T + (H - T - B) * (1 - v / nice);
+  const lab = monthly ? new Intl.DateTimeFormat("de-DE", {month:"short", year:"2-digit"}) : dShort;
   let g = "";
   for (let i = 0; i <= 4; i++) { const v = nice * i / 4, yy = y(v);
     g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--grid)"/>` +
@@ -230,12 +240,13 @@ function weeks(S){
     const x = L + i * bw + gap / 2, w = Math.max(1, bw - gap), h = (H - T - B) - (y(b.rev) - T);
     if (b.rev > 0) g += barPath(x, y(b.rev), w, h);
     g += `<rect class="hit" data-i="${i}" x="${L + i * bw}" y="${T}" width="${bw}" height="${H - T - B}" fill="transparent"/>`;
-    if (i % every === 0) g += `<text x="${x + w / 2}" y="${H - 7}" text-anchor="middle">${dShort.format(b.t)}</text>`;
+    if (i % every === 0) g += `<text x="${x + w / 2}" y="${H - 7}" text-anchor="middle">${lab.format(b.t)}</text>`;
   });
-  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Erlös pro Woche">${g}</svg>`;
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Erlös im Zeitverlauf">${g}</svg>`;
   el.querySelectorAll(".hit").forEach(r => {
     const b = buckets[+r.dataset.i];
-    const f = e => showTip(e, `<b>Woche ab ${dShort.format(b.t)}</b><br>netto ${eur.format(b.rev)} · Preise ${eur.format(b.gross)}<br>${b.n} Artikel`);
+    const head = monthly ? new Intl.DateTimeFormat("de-DE", {month:"long", year:"numeric"}).format(b.t) : `Woche ab ${dShort.format(b.t)}`;
+    const f = e => showTip(e, `<b>${head}</b><br>netto ${eur.format(b.rev)} · Preise ${eur.format(b.gross)}<br>${b.n} Artikel`);
     r.addEventListener("mousemove", f); r.addEventListener("touchstart", f, {passive:true});
     r.addEventListener("mouseleave", hideTip);
   });

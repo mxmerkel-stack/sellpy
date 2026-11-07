@@ -1,0 +1,78 @@
+name: Dashboard aktualisieren
+
+on:
+  schedule:
+    - cron: "17 5 * * *"     # täglich ~06:17 Uhr (MEZ)
+    - cron: "47 18 * * *"    # täglich ~19:47 Uhr (MEZ)
+  workflow_dispatch:          # Knopf "Run workflow" für ein Update von Hand
+  push:                       # nach Code-Änderungen sofort neu bauen
+    branches: [main]
+    paths: ["scripts/**", "site/**", ".github/workflows/update.yml", "requirements.txt"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      DATA_DIR: data
+      DIST_DIR: dist
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Abhängigkeiten
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Verlauf laden (verschlüsselt)
+        uses: actions/cache/restore@v4
+        with:
+          path: data/history.enc
+          key: history-${{ github.run_id }}
+          restore-keys: history-
+
+      - name: Daten bei Sellpy abrufen
+        env:
+          SELLPY_USER: ${{ secrets.SELLPY_USER }}
+          SELLPY_PASS: ${{ secrets.SELLPY_PASS }}
+          PAGE_PASSWORD: ${{ secrets.PAGE_PASSWORD }}
+        run: python scripts/fetch_sellpy.py
+
+      - name: Verlauf speichern (verschlüsselt)
+        uses: actions/cache/save@v4
+        with:
+          path: data/history.enc
+          key: history-${{ github.run_id }}
+
+      - name: Seite bauen und verschlüsseln
+        env:
+          PAGE_PASSWORD: ${{ secrets.PAGE_PASSWORD }}
+        run: |
+          python scripts/build_site.py
+          python scripts/encrypt_page.py
+          rm -f data/sellpy.json
+          touch dist/.nojekyll
+          printf 'User-agent: *\nDisallow: /\n' > dist/robots.txt
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

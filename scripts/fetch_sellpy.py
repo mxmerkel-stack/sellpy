@@ -31,7 +31,7 @@ PASS = os.environ.get("SELLPY_PASS", "")
 PAGE = 200
 
 # Felder, die es nicht bei jedem Artikel geben muss; fehlende werden beim ersten Lauf erkannt und ausgelassen.
-OPTIONAL_ITEM_FIELDS = ["paidAt", "publishedAt", "saleStartedAt", "putUpForSaleAt", "donateAfter"]
+OPTIONAL_ITEM_FIELDS = ["paidAt", "putOnShelfAt", "assortedAt", "donateAfter"]
 
 
 class Sellpy:
