@@ -54,6 +54,16 @@ def headers_clean(h):
     return {k: v for k, v in (h or {}).items() if not SECRET_KEYS.search(k)}
 
 
+SESSION = {}
+
+
+def on_request(req):
+    tok = req.headers.get("x-parse-session-token")
+    if tok:
+        SESSION["token"] = tok
+        SESSION["app"] = req.headers.get("x-parse-application-id")
+
+
 def on_response(resp):
     try:
         ct = resp.headers.get("content-type", "")
@@ -136,6 +146,7 @@ def main():
                                              "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
         page = ctx.new_page()
         page.on("response", on_response)
+        page.on("request", on_request)
 
         page.goto(BASE, wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(3000)
@@ -164,47 +175,30 @@ def main():
         except Exception:
             pass
 
-        # Verkaufsübersicht, dann einzelne Taschen und Artikel öffnen
-        def open_sales(tab=None):
-            page.goto(urljoin(BASE, "/sales"), wait_until="domcontentloaded", timeout=45000)
-            page.wait_for_timeout(4000)
-            if tab:
-                click_first(page, [f"text={tab}"])
-                page.wait_for_timeout(3000)
-
-        for tab, n in ((None, 2), ("Erledigt", 1)):
-            for i in range(n):
-                try:
-                    open_sales(tab)
-                    cards = page.locator("text=Verkaufs-ID")
-                    step(f"Verkaufsübersicht {tab or 'Aktiv'}: {cards.count()} Karten")
-                    cards.nth(i).click(timeout=8000)
-                    page.wait_for_timeout(5000)
-                    for _ in range(4):
-                        page.mouse.wheel(0, 3000)
-                        page.wait_for_timeout(1000)
-                    snap(page, f"tasche-{tab or 'aktiv'}-{i}")
-                    # einen Artikel in der Tasche öffnen
-                    links = [h for _, h in log["pages"][-1]["links"] if h and re.search(r"/(item|sale|artikel)/", h)]
-                    step(f"Artikel-Links in der Tasche: {len(links)}")
-                    if links:
-                        page.goto(urljoin(BASE, links[0]), wait_until="domcontentloaded", timeout=45000)
-                        page.wait_for_timeout(4000)
-                        snap(page, f"artikel-{tab or 'aktiv'}-{i}")
-                    else:
-                        imgs = page.locator("main img")
-                        if imgs.count():
-                            imgs.nth(0).click(timeout=5000)
-                            page.wait_for_timeout(4000)
-                            snap(page, f"artikel-klick-{tab or 'aktiv'}-{i}")
-                except Exception as e:  # noqa: BLE001
-                    step(f"Tasche {tab} {i}: {type(e).__name__}: {str(e)[:150]}")
-
-        page.goto(urljoin(BASE, "/credit/balance"), wait_until="domcontentloaded", timeout=45000)
-        page.wait_for_timeout(3000)
-        click_first(page, ["text=mehr laden"])
-        page.wait_for_timeout(3000)
-        snap(page, "guthaben")
+        page.goto(urljoin(BASE, "/sales"), wait_until="domcontentloaded", timeout=45000)
+        page.wait_for_timeout(5000)
+        step(f"Session-Token erfasst: {'ja' if SESSION.get('token') else 'nein'}")
+        gql = "https://sellpy-parse-prod.herokuapp.com/graphql"
+        hdr = {"content-type": "application/json", "x-parse-application-id": SESSION.get("app", ""),
+               "x-parse-session-token": SESSION.get("token", "")}
+        tq = """query T($n: String!) { __type(name: $n) { name fields { name type { name kind ofType { name kind ofType { name } } } } } }"""
+        probes = {}
+        for t in ["Item", "Bag", "MarketItem", "CreditTransaction", "BalanceTransaction", "Order", "OrderItem",
+                  "Container", "SavedResource", "User", "Payout", "SubUnit", "Query"]:
+            r = page.request.post(gql, headers=hdr, data=json.dumps({"query": tq, "variables": {"n": t}}))
+            probes[t] = r.text()[:200000]
+        # Versuchsabfragen mit Feldnamen-Vorschlägen
+        tries = {
+            "item_fields": "query { items(first: 2, where: {itemStatus: {equalTo: \"betald\"}}) { edges { node { objectId soldAt saleDate sold_at } } } }",
+            "market": "query { marketItems(first: 2) { edges { node { objectId } } } }",
+            "balance": "query { balanceTransactions(first: 5, order: [createdAt_DESC]) { edges { node { objectId delta createdAt type item { objectId } sale { objectId } } } } }",
+            "credit": "query { creditTransactions(first: 5, order: [createdAt_DESC]) { edges { node { objectId type delta createdAt item { objectId } bag { objectId } } } } }",
+        }
+        for k, q in tries.items():
+            r = page.request.post(gql, headers=hdr, data=json.dumps({"query": q}))
+            probes["try_" + k] = r.text()[:50000]
+        log["probes"] = probes
+        step(f"Typ-Abfragen: {len(probes)}")
         browser.close()
 
     blob = gzip.compress(json.dumps(log, ensure_ascii=False).encode())
