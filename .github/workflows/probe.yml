@@ -1,4 +1,4 @@
-name: Einrichtung – Favoriten finden (temporär)
+name: Einrichtung – Favoriten finden 2 (temporär)
 on:
   push:
     paths: [.github/workflows/probe.yml]

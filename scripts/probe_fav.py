@@ -44,14 +44,17 @@ with sync_playwright() as p:
             out["urls"][path] = [r.status if r else None, page.url, page.title(), (page.inner_text("body") or "")[:300]]
         except Exception as e:
             out["urls"][path] = [str(e)[:100]]
-    s = F.Sellpy(page, sess["token"], sess["app"])
-    r = s.q("query { __schema { queryType { fields { name } } mutationType { fields { name } } } }", allow_errors=True)
-    if r.get("data") and r["data"].get("__schema"):
-        pat = re.compile(r"fav|wish|like|save|heart|bookmark", re.I)
-        out["introspection"] = {k: [f["name"] for f in (r["data"]["__schema"][k] or {}).get("fields", []) if pat.search(f["name"])]
-                                for k in ("queryType", "mutationType")}
-    else:
-        out["introspection"] = (r.get("errors") or [{}])[0].get("message", "")[:200]
+    try:
+        s = F.Sellpy(page, sess["token"], sess["app"])
+        r = s.q("query { __schema { queryType { fields { name } } mutationType { fields { name } } } }", allow_errors=True)
+        if r.get("data") and r["data"].get("__schema"):
+            pat = re.compile(r"fav|wish|like|save|heart|bookmark", re.I)
+            out["introspection"] = {k: [f["name"] for f in (r["data"]["__schema"][k] or {}).get("fields", []) if pat.search(f["name"])]
+                                    for k in ("queryType", "mutationType")}
+        else:
+            out["introspection"] = (r.get("errors") or [{}])[0].get("message", "")[:200]
+    except Exception as e:
+        out["introspection"] = "Fehler: " + str(e)[:150]
     b.close()
 Path("data").mkdir(exist_ok=True)
 Path("data/probe.json").write_text(json.dumps(out, ensure_ascii=False))
