@@ -111,13 +111,13 @@ def login(page):
     click_first(page, ["button:has-text('Alle Cookies akzeptieren')", "button:has-text('Nur erforderliche Cookies')"], 3000)
     try:
         page.locator("input[type=email]").first.fill(USER, timeout=10000)
-        page.locator("button:has-text('Fortfahren')").first.click(timeout=8000)
+        page.get_by_role("button", name="Fortfahren", exact=True).first.click(timeout=8000)
         step("E-Mail eingetragen, Fortfahren")
         pw = page.locator("input[type=password]").first
         pw.wait_for(state="visible", timeout=20000)
         pw.fill(PASS)
         step("Passwort eingetragen")
-        page.locator("button:has-text('Einloggen')").last.click(timeout=8000)
+        pw.press("Enter")  # Formular des Passwortfelds absenden – nie den E-Mail-Link-Knopf
         page.wait_for_url(lambda u: "/login" not in u, timeout=30000)
         step(f"Eingeloggt: {page.url}")
         return True
