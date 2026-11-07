@@ -97,22 +97,26 @@ footer{color:var(--text-muted);font-size:12px;margin-top:18px}
   <section class="kpis" id="kpis"></section>
 
   <div class="card">
-    <h2>Umsatz pro Woche</h2>
-    <div class="note">Summe der Verkaufspreise, Woche ab Montag</div>
+    <h2>Erlös pro Woche</h2>
+    <div class="note">Netto nach Sellpy-Provision und Gebühren, Woche ab Montag</div>
     <div id="c-weeks"></div>
   </div>
 
   <div class="grid2">
-    <div class="card"><h2>Top-Marken</h2><div class="note" id="n-brands">nach Umsatz</div><div id="c-brands"></div></div>
-    <div class="card"><h2>Kategorien</h2><div class="note">nach Umsatz</div><div id="c-cats"></div></div>
-    <div class="card"><h2>Preise</h2><div class="note">Anzahl verkaufter Artikel je Preisklasse</div><div id="c-prices"></div></div>
+    <div class="card"><h2>Top-Marken</h2><div class="note" id="n-brands">nach Netto-Erlös</div><div id="c-brands"></div></div>
+    <div class="card"><h2>Kategorien</h2><div class="note">nach Netto-Erlös</div><div id="c-cats"></div></div>
+    <div class="card"><h2>Preise</h2><div class="note">verkaufte Artikel je Preisklasse (Verkaufspreis)</div><div id="c-prices"></div></div>
     <div class="card"><h2>Zeit bis zum Verkauf</h2><div class="note">Tage online, Anzahl Artikel</div><div id="c-days"></div></div>
+    <div class="card"><h2>Was mit deinen Artikeln passiert ist</h2><div class="note">alle Artikel aus deinen Taschen, nach Status</div><div id="c-status"></div></div>
+    <div class="card"><h2>Was bei dir ankommt</h2><div class="note">Anteil vom Verkaufspreis, nach Preisklasse</div><div id="c-share"></div></div>
   </div>
 
   <div class="card">
-    <h2>Taschen und Ablauf</h2>
-    <div class="note">aus den übrigen Sellpy-Mails, im gewählten Zeitraum</div>
-    <div class="events" id="events"></div>
+    <h2>Taschen</h2>
+    <div class="note" id="bags-note"></div>
+    <div class="tbl-wrap"><table id="bags"><thead><tr>
+      <th>Eingeschickt</th><th class="num">Artikel</th><th class="num">Verkauft</th><th class="num">Online</th><th class="num">Netto</th>
+    </tr></thead><tbody></tbody></table></div>
   </div>
 
   <div class="card">
@@ -125,8 +129,8 @@ footer{color:var(--text-muted);font-size:12px;margin-top:18px}
       <th data-k="kind">Artikel</th>
       <th data-k="size">Größe</th>
       <th data-k="price" class="num">Preis</th>
+      <th data-k="net" class="num">Netto</th>
       <th data-k="days_listed" class="num">Tage</th>
-      <th data-k="favorites" class="num">♥</th>
     </tr></thead><tbody></tbody></table></div>
     <button class="more" id="more" hidden>Mehr anzeigen</button>
   </div>
@@ -150,7 +154,6 @@ const DAY = 864e5;
 
 const state = {range:"all", kids:"all", sortK:"sold_at", sortDir:-1, q:"", limit:25};
 D.sales.forEach(s => s.t = new Date(s.sold_at));
-D.events.forEach(e => e.t = new Date(e.at));
 
 /* ---------- Tooltip ---------- */
 const tip = document.getElementById("tip");
@@ -182,25 +185,28 @@ for (const id of ["f-range", "f-kids"]) {
 
 /* ---------- KPIs ---------- */
 function kpis(S){
-  const rev = sum(S, s => s.price), n = S.length;
-  const co2 = sum(S, s => s.co2_kg), water = sum(S, s => s.water_l);
-  const days = avg(S, s => s.days_listed), favs = sum(S, s => s.favorites);
+  const gross = sum(S, s => s.price), net = sum(S, s => s.net), n = S.length;
+  const withNet = S.filter(s => s.net != null), gWith = sum(withNet, s => s.price);
+  const days = avg(S, s => s.days_listed);
   const firstDay = n ? Math.min(...S.map(s => +s.t)) : null;
   const weeks = firstDay ? Math.max(1, (Date.now() - firstDay) / (7 * DAY)) : 1;
+  const online = D.items.filter(i => i.status === "Online" && kidsOk(i));
   const tiles = [
-    ["Umsatz", eur.format(rev), n ? `≈ ${eur0.format(rev / weeks)} pro Woche` : ""],
+    ["Netto-Erlös", eur.format(net), n ? `≈ ${eur.format(net / weeks)} pro Woche` : ""],
+    ["Verkaufspreise", eur.format(gross), gWith ? `davon ${pct(sum(withNet, s => s.net) / gWith)} bei dir` : ""],
     ["Verkaufte Artikel", n.toLocaleString("de-DE"), n ? `≈ ${num.format(n / weeks)} pro Woche` : ""],
-    ["Ø Preis", n ? eur.format(rev / n) : "–", n ? `Median ${eur.format(median(S.map(s => s.price)))}` : ""],
-    ["Ø Tage online", days != null ? Math.round(days) : "–", "bis zum Verkauf"],
-    ["Favoriten", favs.toLocaleString("de-DE"), n ? `Ø ${num.format(favs / n)} je Artikel` : ""],
-    ["Teuerster Verkauf", n ? eur.format(Math.max(...S.map(s => s.price))) : "–", n ? esc(S.reduce((a, b) => b.price > a.price ? b : a).brand) : ""],
-    ["CO₂ gespart", `${num.format(co2)} kg`, "laut Sellpy"],
-    ["Wasser gespart", water >= 1000 ? `${num.format(water / 1000)} m³` : `${Math.round(water)} l`, "laut Sellpy"],
+    ["Ø netto je Artikel", n ? eur.format(net / n) : "–", n ? `Ø Preis ${eur.format(gross / n)}` : ""],
+    ["Ø Tage bis Verkauf", days != null ? Math.round(days) : "–", days != null ? `Median ${median(S.map(s => s.days_listed).filter(x => x != null))}` : ""],
+    ["Gerade online", online.length.toLocaleString("de-DE"), online.length ? `Preise zusammen ${eur0.format(sum(online, i => i.price))}` : ""],
+    ["Bester Verkauf", n ? eur.format(Math.max(...S.map(s => s.net ?? 0))) : "–", n ? esc(S.reduce((a, b) => (b.net ?? 0) > (a.net ?? 0) ? b : a).brand) + " · netto" : ""],
+    ["Sellpy Credits", D.credit_now != null ? eur.format(D.credit_now) : "–", "aktuelles Guthaben"],
   ];
   document.getElementById("kpis").innerHTML = tiles.map(([k, v, d]) =>
     `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
 }
+const pct = x => (x * 100).toLocaleString("de-DE", {maximumFractionDigits:0}) + " %";
 function median(a){ if (!a.length) return 0; const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; }
+const kidsOk = i => state.kids === "all" || (state.kids === "kids") === !!i.kids;
 
 /* ---------- Wochen-Balken (SVG) ---------- */
 function monday(d){ const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
@@ -209,8 +215,8 @@ function weeks(S){
   if (!S.length) { el.innerHTML = '<div class="empty">Keine Verkäufe im Zeitraum.</div>'; return; }
   const start = monday(Math.min(...S.map(s => +s.t))), end = monday(Date.now());
   const buckets = [];
-  for (let t = new Date(start); t <= end; t.setDate(t.getDate() + 7)) buckets.push({t:new Date(t), rev:0, n:0});
-  for (const s of S) { const i = Math.round((monday(s.t) - start) / (7 * DAY)); if (buckets[i]) { buckets[i].rev += s.price; buckets[i].n++; } }
+  for (let t = new Date(start); t <= end; t.setDate(t.getDate() + 7)) buckets.push({t:new Date(t), rev:0, gross:0, n:0});
+  for (const s of S) { const i = Math.round((monday(s.t) - start) / (7 * DAY)); if (buckets[i]) { buckets[i].rev += (s.net ?? 0); buckets[i].gross += s.price; buckets[i].n++; } }
   const W = Math.max(320, el.clientWidth || 600), H = 190, L = 40, R = 8, T = 10, B = 24;
   const max = Math.max(...buckets.map(b => b.rev), 1), nice = niceMax(max);
   const bw = (W - L - R) / buckets.length, gap = Math.min(4, bw * 0.25);
@@ -226,10 +232,10 @@ function weeks(S){
     g += `<rect class="hit" data-i="${i}" x="${L + i * bw}" y="${T}" width="${bw}" height="${H - T - B}" fill="transparent"/>`;
     if (i % every === 0) g += `<text x="${x + w / 2}" y="${H - 7}" text-anchor="middle">${dShort.format(b.t)}</text>`;
   });
-  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Umsatz pro Woche">${g}</svg>`;
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Erlös pro Woche">${g}</svg>`;
   el.querySelectorAll(".hit").forEach(r => {
     const b = buckets[+r.dataset.i];
-    const f = e => showTip(e, `<b>Woche ab ${dShort.format(b.t)}</b><br>${eur.format(b.rev)} · ${b.n} Artikel`);
+    const f = e => showTip(e, `<b>Woche ab ${dShort.format(b.t)}</b><br>netto ${eur.format(b.rev)} · Preise ${eur.format(b.gross)}<br>${b.n} Artikel`);
     r.addEventListener("mousemove", f); r.addEventListener("touchstart", f, {passive:true});
     r.addEventListener("mouseleave", hideTip);
   });
@@ -253,7 +259,7 @@ function hbars(id, rows, fmt, tipFmt){
 }
 function groupBy(S, key){
   const m = new Map();
-  for (const s of S) { const k = key(s); const g = m.get(k) || {label:k, v:0, n:0, favs:0}; g.v += s.price; g.n++; g.favs += s.favorites || 0; m.set(k, g); }
+  for (const s of S) { const k = key(s); const g = m.get(k) || {label:k, v:0, n:0, gross:0}; g.v += (s.net ?? 0); g.gross += s.price; g.n++; m.set(k, g); }
   return [...m.values()].sort((a, b) => b.v - a.v);
 }
 function buckets(S, f, edges, unit){
@@ -261,35 +267,31 @@ function buckets(S, f, edges, unit){
     const hi = edges[i + 1];
     const label = hi === Infinity ? `ab ${lo}${unit}` : `${lo}–${hi}${unit}`;
     const items = S.filter(s => { const v = f(s); return v != null && v >= lo && v < hi; });
-    return {label, v:items.length, n:items.length, rev:sum(items, s => s.price)};
+    return {label, v:items.length, n:items.length, gross:sum(items, s => s.price), net:sum(items, s => s.net)};
   });
   return rows;
 }
 
-/* ---------- Ereignisse ---------- */
-const EV = [["bag_ordered", "Taschen bestellt"], ["bag_arrived", "Taschen im Lager"], ["sale_started", "Verkaufsstarts"],
-            ["new_listings", "Anzeigen-Hinweise"], ["last_chance", "„Letzte Chance“"], ["sale_ended", "Verkäufe beendet"],
-            ["bag_sent", "Taschen versandt"], ["purchase", "Eigene Käufe"]];
-function events(){
-  const now = Date.now();
-  const E = D.events.filter(e => state.range === "all" || now - e.t <= state.range * DAY);
-  document.getElementById("events").innerHTML = EV.map(([k, t]) => {
-    const xs = E.filter(e => e.type === k); const last = xs.length ? xs[xs.length - 1].t : null;
-    return `<div class="ev"><div class="n">${xs.length}</div><div class="t">${t}</div><div class="w">${last ? "zuletzt " + dFmt.format(last) : "&nbsp;"}</div></div>`;
-  }).join("");
+/* ---------- Taschen ---------- */
+function bags(){
+  const B = [...D.bags].reverse();
+  document.querySelector("#bags tbody").innerHTML = B.map(b =>
+    `<tr><td>${b.created_at ? dFmt.format(new Date(b.created_at)) : "–"}</td><td class="num">${b.items}</td><td class="num">${b.sold}</td>` +
+    `<td class="num">${b.online}</td><td class="num">${eur.format(b.net)}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">Keine Taschen.</td></tr>`;
+  document.getElementById("bags-note").textContent = `${B.length} Taschen · ${sum(B, b => b.items)} Artikel · ${sum(B, b => b.sold)} verkauft`;
 }
 
 /* ---------- Tabelle ---------- */
 function table(S){
   const q = state.q.trim().toLowerCase();
-  let rows = q ? S.filter(s => `${s.brand} ${s.kind} ${s.size} ${s.category}`.toLowerCase().includes(q)) : [...S];
+  let rows = q ? S.filter(s => `${s.brand} ${s.kind} ${s.size} ${s.category} ${s.condition}`.toLowerCase().includes(q)) : [...S];
   const k = state.sortK, dir = state.sortDir;
   rows.sort((a, b) => { const x = a[k] ?? "", y = b[k] ?? ""; return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "de")) * dir; });
   document.querySelector("#tbl tbody").innerHTML = rows.slice(0, state.limit).map(s =>
     `<tr><td>${dFmt.format(s.t)}</td><td>${esc(s.brand)}</td><td>${esc(s.kind)}${s.kids ? '<span class="pill">Kind</span>' : ""}</td>` +
-    `<td>${esc(s.size || "")}</td><td class="num">${eur.format(s.price)}</td><td class="num">${s.days_listed ?? "–"}</td><td class="num">${s.favorites ?? "–"}</td></tr>`).join("")
+    `<td>${esc(s.size || "")}</td><td class="num">${eur.format(s.price)}</td><td class="num">${s.net != null ? eur.format(s.net) : "–"}</td><td class="num">${s.days_listed ?? "–"}</td></tr>`).join("")
     || `<tr><td colspan="7" class="empty">Keine Treffer.</td></tr>`;
-  document.getElementById("tbl-note").textContent = `${rows.length} Verkäufe · ${eur.format(sum(rows, s => s.price))}`;
+  document.getElementById("tbl-note").textContent = `${rows.length} Verkäufe · Preise ${eur.format(sum(rows, s => s.price))} · netto ${eur.format(sum(rows, s => s.net))}`;
   const more = document.getElementById("more");
   more.hidden = rows.length <= state.limit; more.textContent = `Alle ${rows.length} anzeigen`;
 }
@@ -307,23 +309,27 @@ document.getElementById("more").addEventListener("click", () => { state.limit = 
 /* ---------- Render ---------- */
 function render(){
   const S = filtered();
-  kpis(S); weeks(S); events(); table(S);
+  kpis(S); weeks(S); bags(); table(S);
   const br = groupBy(S, s => s.brand);
-  document.getElementById("n-brands").textContent = br.length > 10 ? `nach Umsatz, Top 10 von ${br.length}` : "nach Umsatz";
-  hbars("c-brands", br.slice(0, 10), r => eur.format(r.v),
-    r => `<b>${esc(r.label)}</b><br>${eur.format(r.v)} · ${r.n} Artikel<br>Ø ${eur.format(r.v / r.n)}`);
-  hbars("c-cats", groupBy(S, s => s.category), r => eur.format(r.v),
-    r => `<b>${esc(r.label)}</b><br>${eur.format(r.v)} · ${r.n} Artikel<br>Ø ${eur.format(r.v / r.n)}`);
+  document.getElementById("n-brands").textContent = br.length > 10 ? `nach Netto-Erlös, Top 10 von ${br.length}` : "nach Netto-Erlös";
+  const tipG = r => `<b>${esc(r.label)}</b><br>netto ${eur.format(r.v)} · Preise ${eur.format(r.gross)}<br>${r.n} Artikel`;
+  hbars("c-brands", br.slice(0, 10), r => eur.format(r.v), tipG);
+  hbars("c-cats", groupBy(S, s => s.category), r => eur.format(r.v), tipG);
   hbars("c-prices", buckets(S, s => s.price, [0, 3, 5, 8, 12, 20, 35, Infinity], " €"), r => r.n,
-    r => `<b>${esc(r.label)}</b><br>${r.n} Artikel · ${eur.format(r.rev)}`);
+    r => `<b>${esc(r.label)}</b><br>${r.n} Artikel · netto ${eur.format(r.net)}`);
   hbars("c-days", buckets(S, s => s.days_listed, [0, 14, 30, 60, 90, 120, 180, Infinity], " T"), r => r.n,
-    r => `<b>${esc(r.label)}</b><br>${r.n} Artikel · ${eur.format(r.rev)}`);
+    r => `<b>${esc(r.label)}</b><br>${r.n} Artikel · netto ${eur.format(r.net)}`);
+  const st = new Map(); for (const i of D.items.filter(kidsOk)) st.set(i.status, (st.get(i.status) || 0) + 1);
+  const stRows = [...st].map(([label, v]) => ({label, v})).sort((a, b) => b.v - a.v), stTot = sum(stRows, r => r.v);
+  hbars("c-status", stRows, r => r.v, r => `<b>${esc(r.label)}</b><br>${r.v} von ${stTot} Artikeln (${pct(r.v / stTot)})`);
+  const share = buckets(S.filter(s => s.net != null), s => s.price, [0, 3, 5, 8, 12, 20, 35, Infinity], " €")
+    .filter(r => r.n).map(r => ({...r, v: r.gross ? r.net / r.gross : 0}));
+  hbars("c-share", share, r => pct(r.v), r => `<b>${esc(r.label)}</b><br>${pct(r.v)} vom Preis · ${r.n} Artikel<br>Preise ${eur.format(r.gross)} → netto ${eur.format(r.net)}`);
 }
 const built = new Date(D.built_at);
-document.getElementById("stand").textContent = `Stand ${dFmt.format(built)}, ${built.toLocaleTimeString("de-DE", {hour:"2-digit", minute:"2-digit"})} Uhr · ${D.sales.length} Verkäufe insgesamt`;
-document.getElementById("foot").innerHTML =
-  "Quelle: Sellpy-Verkaufsmails in Gmail. Beträge sind Verkaufspreise, nicht dein Erlös nach Sellpy-Provision." +
-  (D.meta.parse_failed ? ` · ${D.meta.parse_failed} Verkaufsmail(s) konnten nicht gelesen werden.` : "");
+document.getElementById("stand").textContent = `Stand ${dFmt.format(built)}, ${built.toLocaleTimeString("de-DE", {hour:"2-digit", minute:"2-digit"})} Uhr · ${D.sales.length} Verkäufe · ${D.items.length} Artikel`;
+document.getElementById("foot").textContent = "Quelle: dein Sellpy-Konto. Netto = Verkaufspreis minus Sellpy-Provision und Anzeigengebühr, so wie Sellpy es je Artikel bucht.";
+if (!D.items.some(i => i.kids)) document.getElementById("f-kids").hidden = true;
 render();
 let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => weeks(filtered()), 150); });
 </script>

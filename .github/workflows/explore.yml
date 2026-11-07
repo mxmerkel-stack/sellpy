@@ -1,11 +1,9 @@
-name: Sellpy erkunden (einmalig)
+name: Sellpy-Abruf testen (Einrichtung)
 
-# Startet von selbst, wenn sich das Erkundungs-Script ändert, oder per "Run workflow".
+# Nur für die Einrichtung: startet bei Änderungen an explore/trigger.txt oder per "Run workflow".
 on:
   push:
     paths:
-      - scripts/explore_sellpy.py
-      - .github/workflows/explore.yml
       - explore/trigger.txt
   workflow_dispatch:
 
@@ -13,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  explore:
+  test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -23,10 +21,13 @@ jobs:
           python-version: "3.12"
       - name: Abhängigkeiten
         run: |
-          pip install cryptography==43.0.3 playwright==1.48.0
+          pip install -r requirements.txt
           python -m playwright install --with-deps chromium
-      - name: Bei Sellpy anmelden und aufzeichnen (verschlüsselt)
+      - name: Daten bei Sellpy abrufen
         env:
           SELLPY_USER: ${{ secrets.SELLPY_USER }}
           SELLPY_PASS: ${{ secrets.SELLPY_PASS }}
-        run: python scripts/explore_sellpy.py
+          PAGE_PASSWORD: einmaliger-testlauf-ohne-verlauf
+        run: python scripts/fetch_sellpy.py
+      - name: Ergebnis verschlüsselt ausgeben
+        run: python scripts/dump_for_claude.py data/sellpy.json
