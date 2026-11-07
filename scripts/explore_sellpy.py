@@ -106,6 +106,26 @@ def click_first(page, selectors, timeout=2500):
     return None
 
 
+def login(page):
+    """E-Mail -> Fortfahren -> Passwort -> Einloggen. Cookie-Banner vorher schließen."""
+    click_first(page, ["button:has-text('Alle Cookies akzeptieren')", "button:has-text('Nur erforderliche Cookies')"], 3000)
+    try:
+        page.locator("input[type=email]").first.fill(USER, timeout=10000)
+        page.locator("button:has-text('Fortfahren')").first.click(timeout=8000)
+        step("E-Mail eingetragen, Fortfahren")
+        pw = page.locator("input[type=password]").first
+        pw.wait_for(state="visible", timeout=20000)
+        pw.fill(PASS)
+        step("Passwort eingetragen")
+        page.locator("button:has-text('Einloggen')").last.click(timeout=8000)
+        page.wait_for_url(lambda u: "/login" not in u, timeout=30000)
+        step(f"Eingeloggt: {page.url}")
+        return True
+    except Exception as e:  # noqa: BLE001
+        step(f"Login: {type(e).__name__}: {str(e)[:200]}")
+        return False
+
+
 def main():
     if not USER or not PASS:
         sys.exit("SELLPY_USER und SELLPY_PASS fehlen (Repo-Secrets).")
@@ -133,23 +153,7 @@ def main():
                 break
         snap(page, "login-seite")
 
-        email_sel = "input[type=email], input[name*=mail i], input[autocomplete=username], input[name=username]"
-        try:
-            page.locator(email_sel).first.fill(USER, timeout=8000)
-            step("E-Mail eingetragen")
-            if not page.locator("input[type=password]").first.is_visible(timeout=1500):
-                click_first(page, ["button[type=submit]", "button:has-text('Weiter')", "button:has-text('Fortfahren')"])
-                page.wait_for_timeout(2500)
-            page.locator("input[type=password]").first.fill(PASS, timeout=8000)
-            step("Passwort eingetragen")
-            used = click_first(page, ["button[type=submit]", "button:has-text('Anmelden')", "button:has-text('Einloggen')",
-                                      "button:has-text('Log in')"])
-            if not used:
-                page.keyboard.press("Enter")
-            step(f"Absenden: {used or 'Enter'}")
-            page.wait_for_load_state("networkidle", timeout=30000)
-        except Exception as e:  # noqa: BLE001
-            step(f"Login-Formular: {type(e).__name__}: {str(e)[:200]}")
+        login(page)
         page.wait_for_timeout(4000)
         snap(page, "nach-login")
 
