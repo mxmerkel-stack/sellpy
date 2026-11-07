@@ -153,31 +153,54 @@ def main():
         page.wait_for_timeout(4000)
         snap(page, "nach-login")
 
-        # Profil- und Verkaufsseiten besuchen
-        candidates = ["/profile", "/my-pages", "/my-sales", "/profile/sales", "/sales", "/myitems", "/my-items",
-                      "/profil", "/meine-verkaeufe", "/account"]
-        seen = set()
-        for _, href in log["pages"][-1]["links"]:
-            if href and re.search(r"(profil|profile|sale|verkauf|sell|my|mein|account|konto|item|artikel|balance|guthaben|payout|auszahl)", href, re.I):
-                candidates.append(href)
-        for href in candidates:
-            url = urljoin(BASE, href)
-            if urlparse(url).netloc != urlparse(BASE).netloc or url in seen or len(seen) >= 18:
-                continue
-            seen.add(url)
-            try:
-                page.goto(url, wait_until="domcontentloaded", timeout=45000)
-                page.wait_for_timeout(3500)
-                for _ in range(3):
-                    page.mouse.wheel(0, 4000)
-                    page.wait_for_timeout(900)
-                snap(page, href)
-                # Unterseiten der Verkaufsseiten einmal mitnehmen
-                for _, sub in log["pages"][-1]["links"]:
-                    if sub and re.search(r"(sale|verkauf|sold|verkauft|item)", sub, re.I):
-                        candidates.append(sub)
-            except Exception as e:  # noqa: BLE001
-                step(f"{href}: {type(e).__name__}")
+        try:
+            keys = page.evaluate("Object.keys(localStorage)")
+            log["storage_keys"] = [k for k in keys]
+            step(f"localStorage-Schlüssel: {len(keys)}")
+        except Exception:
+            pass
+
+        # Verkaufsübersicht, dann einzelne Taschen und Artikel öffnen
+        def open_sales(tab=None):
+            page.goto(urljoin(BASE, "/sales"), wait_until="domcontentloaded", timeout=45000)
+            page.wait_for_timeout(4000)
+            if tab:
+                click_first(page, [f"text={tab}"])
+                page.wait_for_timeout(3000)
+
+        for tab, n in ((None, 2), ("Erledigt", 1)):
+            for i in range(n):
+                try:
+                    open_sales(tab)
+                    cards = page.locator("text=Verkaufs-ID")
+                    step(f"Verkaufsübersicht {tab or 'Aktiv'}: {cards.count()} Karten")
+                    cards.nth(i).click(timeout=8000)
+                    page.wait_for_timeout(5000)
+                    for _ in range(4):
+                        page.mouse.wheel(0, 3000)
+                        page.wait_for_timeout(1000)
+                    snap(page, f"tasche-{tab or 'aktiv'}-{i}")
+                    # einen Artikel in der Tasche öffnen
+                    links = [h for _, h in log["pages"][-1]["links"] if h and re.search(r"/(item|sale|artikel)/", h)]
+                    step(f"Artikel-Links in der Tasche: {len(links)}")
+                    if links:
+                        page.goto(urljoin(BASE, links[0]), wait_until="domcontentloaded", timeout=45000)
+                        page.wait_for_timeout(4000)
+                        snap(page, f"artikel-{tab or 'aktiv'}-{i}")
+                    else:
+                        imgs = page.locator("main img")
+                        if imgs.count():
+                            imgs.nth(0).click(timeout=5000)
+                            page.wait_for_timeout(4000)
+                            snap(page, f"artikel-klick-{tab or 'aktiv'}-{i}")
+                except Exception as e:  # noqa: BLE001
+                    step(f"Tasche {tab} {i}: {type(e).__name__}: {str(e)[:150]}")
+
+        page.goto(urljoin(BASE, "/credit/balance"), wait_until="domcontentloaded", timeout=45000)
+        page.wait_for_timeout(3000)
+        click_first(page, ["text=mehr laden"])
+        page.wait_for_timeout(3000)
+        snap(page, "guthaben")
         browser.close()
 
     blob = gzip.compress(json.dumps(log, ensure_ascii=False).encode())
