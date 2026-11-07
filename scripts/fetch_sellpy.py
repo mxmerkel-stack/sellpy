@@ -62,6 +62,48 @@ class Sellpy:
             cursor = data["pageInfo"]["endCursor"]
 
 
+def trim_hit(h):
+    """Nur die Felder behalten, die das Dashboard braucht (keine Bilder, Schlagworte, Rankingwerte)."""
+    meta = {k: v for k, v in (h.get("metadata") or {}).items() if k != "defects"}
+    cats = h.get("categories") or {}
+    return {"objectId": h.get("objectID"), "created": h.get("createdAt"), "sale_started": h.get("saleStartedAt"), "metadata": meta,
+            "cat": (cats.get("lvl2") or cats.get("lvl1") or cats.get("lvl0") or [""])[0], "pricing": h.get("pricing"),
+            "price_drop": h.get("priceDrop_DE"), "fav_count": h.get("favouriteCount"), "p2p": h.get("p2p"),
+            "reserved": h.get("isReserved"), "for_sale": h.get("isForSale"), "last_chance": h.get("lastChance"),
+            "seller": h.get("user"), "segment": h.get("segment")}
+
+
+def fetch_fav_items(page, ids):
+    """Fragt die Suche (Algolia) mit denselben Zugangsdaten ab, die die Favoritenseite im Browser benutzt."""
+    if not ids:
+        return [], []
+    alg = {}
+
+    def on_req(r):
+        if "algolia.net/1/indexes" in r.url and not alg:
+            alg.update(url=r.url, index=(json.loads(r.post_data or "{}").get("requests") or [{}])[0].get("indexName"))
+
+    page.on("request", on_req)
+    page.goto(BASE + "/my-shopping/favorites", wait_until="domcontentloaded", timeout=60000)
+    for _ in range(40):
+        if alg.get("index"):
+            break
+        page.wait_for_timeout(500)
+    page.remove_listener("request", on_req)
+    if not alg.get("index"):
+        raise RuntimeError("Suchzugang der Favoritenseite nicht gefunden")
+    hits = []
+    for i in range(0, len(ids), 40):
+        flt = "(" + " OR ".join(f"objectID:{x}" for x in ids[i:i + 40]) + ")"
+        r = page.request.post(alg["url"], headers={"content-type": "application/json"}, timeout=60000,
+                              data=json.dumps({"requests": [{"indexName": alg["index"], "hitsPerPage": 100, "filters": flt}]}))
+        hits += r.json()["results"][0]["hits"]
+    drops = [h for h in hits if h.get("priceDrop_DE")]
+    print(f"Favoriten-Details: {len(hits)} von {len(ids)} Artikeln gefunden, {len(drops)} mit Preissenkung"
+          + (f" (Beispiel-Felder: {sorted(drops[0]['priceDrop_DE']) if isinstance(drops[0]['priceDrop_DE'], dict) else drops[0]['priceDrop_DE']})" if drops else ""))
+    return [trim_hit(h) for h in hits], [h["objectID"] for h in hits]
+
+
 def login(page):
     page.goto(BASE + "/login", wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(2500)
@@ -178,6 +220,19 @@ def main():
             r = s.q("query L($id: ID!) { fetchLineItemsByOrder(orderId: $id) { type amountIncludingTax discountAmount } }",
                     {"id": o["objectId"]}, allow_errors=True)
             o["lineItems"] = (r.get("data") or {}).get("fetchLineItemsByOrder") or []
+        # Favoriten: Einträge kommen per GraphQL, Artikeldetails (Marke, Preis …) aus der Suche, die auch die Favoritenseite nutzt
+        wish, fav_items, fav_avail = [], [], []
+        try:
+            wish = s.pages("""query W($uid: ID!, $first: Int, $after: String) {
+              itemWishlists(where: {user: {have: {objectId: {equalTo: $uid}}}}, first: $first, after: $after, order: updatedAt_DESC) {
+                pageInfo { hasNextPage endCursor }
+                edges { node { objectId createdAt updatedAt selected active item { objectId } } }
+              } }""", "itemWishlists", {"uid": uid})
+            cur_ids = [w["item"]["objectId"] for w in wish if w.get("selected") and w.get("active") and w.get("item")]
+            print(f"Favoriten-Einträge: {len(wish)}, davon aktiv: {len(cur_ids)}")
+            fav_items, fav_avail = fetch_fav_items(page, cur_ids)
+        except Exception as e:  # noqa: BLE001
+            print(f"Favoriten übersprungen ({type(e).__name__}: {str(e)[:120]})")
         credit_now = s.q('query { currentUserCredit(currency: "EUR") }', allow_errors=True).get("data", {}).get("currentUserCredit")
         print(f"Credit-Buchungen: {len(credits)}")
         browser.close()
@@ -186,7 +241,8 @@ def main():
     print(f"Artikel-Merkmale: {', '.join(meta_keys)}")
 
     snapshot = {"fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "items": items, "balance": balance,
-                "bags": bags, "credits": credits, "orders": orders, "claims": claims, "credit_now": credit_now, "item_fields": fields}
+                "bags": bags, "credits": credits, "orders": orders, "claims": claims, "credit_now": credit_now, "item_fields": fields,
+                "wishlist": wish, "fav_items": fav_items, "fav_available": fav_avail}
 
     # Verlauf: Artikel und Buchungen werden zusammengeführt, damit nichts verloren geht
     hist_path = DATA / "history.enc"
@@ -195,7 +251,7 @@ def main():
     except Exception:
         print("Verlauf nicht lesbar (anderes Seitenpasswort?) – starte neu.")
         hist = {}
-    for key in ("items", "balance", "bags", "credits", "orders", "claims"):
+    for key in ("items", "balance", "bags", "credits", "orders", "claims", "wishlist", "fav_items"):
         merged = {x["objectId"]: x for x in hist.get(key, [])}
         merged.update({x["objectId"]: x for x in snapshot[key]})
         snapshot[key] = list(merged.values())

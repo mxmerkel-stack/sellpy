@@ -169,7 +169,7 @@ def transform(raw):
             if meta.get("title"):
                 kind = f"{kind}: {flat(meta['title'])}"
             ct = claim_type.get(it["objectId"])
-            row = {"order": o["objectId"], "at": o.get("datePaid") or o.get("createdAt"),
+            row = {"order": o["objectId"], "item": it["objectId"], "at": o.get("datePaid") or o.get("createdAt"),
                    "brand": flat(meta.get("brand")) or "Ohne Marke", "kind": kind, "size": nice_size(raw_size),
                    "condition": flat(meta.get("condition")), "category": category(flat(meta.get("type"))),
                    "kids": is_kids(meta, raw_size), "price": pay.get(it["objectId"]) or 0,
@@ -187,10 +187,35 @@ def transform(raw):
                        "effective": (0 if canceled else total) - (refunded if li else sum(r["price"] for r in back)) + return_fees,
                        "status": "Storniert" if canceled else ("Geliefert" if o.get("dateDelivered") else "Unterwegs"),
                        "kids": bool(o_items) and all(r["kids"] for r in o_items)})
+    # Favoriten: Einträge (auch entfernte) und Details der aktuell aktiven
+    bought = {p["item"]: p["status"] for p in purchases if p["status"] != "Storniert"}
+    hits = {h["objectId"]: h for h in raw.get("fav_items", [])}
+    avail = set(raw.get("fav_available") or [])
+    wish_events, favs = [], []
+    for w in raw.get("wishlist", []):
+        iid = (w.get("item") or {}).get("objectId")
+        cur = bool(w.get("selected") and w.get("active"))
+        h = hits.get(iid)
+        meta = (h or {}).get("metadata") or {}
+        raw_size = flat(meta.get("size") or (meta.get("sizes") or ""))
+        kids = is_kids(meta, raw_size) if h else None
+        wish_events.append({"at": w.get("createdAt"), "cur": cur, "bought": bought.get(iid), "kids": kids})
+        if cur and iid:
+            amount = ((h or {}).get("pricing") or {}).get("amount")
+            kind = flat(meta.get("type")) or "Artikel"
+            if meta.get("model"):
+                kind = f"{kind}, {flat(meta['model'])}"
+            favs.append({"id": iid, "at": w.get("createdAt"), "known": bool(h), "avail": iid in avail and bool((h or {}).get("for_sale", True)),
+                         "brand": flat(meta.get("brand")) or ("Ohne Marke" if h else "Unbekannt"), "kind": kind if h else "nicht mehr gelistet",
+                         "size": nice_size(raw_size), "condition": flat(meta.get("condition")), "category": category(flat(meta.get("type"))) if h else "Unbekannt",
+                         "demography": flat(meta.get("demography")), "kids": bool(kids), "price": amount, "dropped": bool((h or {}).get("price_drop")),
+                         "likes": (h or {}).get("fav_count"), "reserved": bool((h or {}).get("reserved")), "p2p": bool((h or {}).get("p2p")),
+                         "listed_at": ((h or {}).get("sale_started") or 0) / 1000 or None, "bought": bought.get(iid)})
     credits = [{"at": c["createdAt"], "type": c["type"], "amount": c["delta"]["amount"] / 100} for c in raw.get("credits", [])]
     return {"items": items, "sales": sorted(sales, key=lambda s: s["sold_at"] or ""), "bags": sorted(bags, key=lambda b: b["created_at"] or ""),
             "payouts": payouts, "unsold_fees": unsold_fees, "credits": credits, "credit_now": raw.get("credit_now"), "other_tx_types": other_types, "purchases": sorted(purchases, key=lambda r: r["at"] or ""),
             "orders": sorted(orders, key=lambda r: r["at"] or ""),
+            "wish": sorted(wish_events, key=lambda e: e["at"] or ""), "favs": sorted(favs, key=lambda e: e["at"] or ""),
             "fetched_at": raw.get("fetched_at")}
 
 
