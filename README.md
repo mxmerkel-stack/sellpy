@@ -1,4 +1,4 @@
-# Sellpy-Dashboard
+# SellDash – mein Sellpy-Dashboard
 
 Privates Dashboard für meine Verkäufe bei Sellpy: Umsatz pro Woche, Top-Marken, Kategorien,
 Preise, Zeit bis zum Verkauf, Favoriten, CO₂-Ersparnis und eine durchsuchbare Liste aller Verkäufe.

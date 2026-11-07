@@ -22,10 +22,16 @@ LOGIN = r"""<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<meta name="theme-color" content="#1c5cab">
+<meta name="theme-color" content="#2a78d6">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Sellpy">
-<title>Sellpy-Dashboard</title>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="SellDash">
+<meta name="application-name" content="SellDash">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<title>SellDash</title>
 <style>
 :root{color-scheme:light dark;--bg:#f4f3f0;--panel:#fcfcfb;--fg:#0b0b0b;--muted:#52514e;--line:#d6d4cf;--accent:#2a78d6;--bad:#d03b3b}
 @media (prefers-color-scheme:dark){:root{--bg:#111110;--panel:#1a1a19;--fg:#f0efec;--muted:#c3c2b7;--line:#3a3a37;--accent:#3987e5}}
@@ -40,8 +46,9 @@ button{width:100%;font:inherit;font-weight:600;padding:10px;border:0;border-radi
 #err{color:var(--bad);font-size:13px;min-height:18px;margin-top:10px}
 </style></head><body>
 <form id="f" autocomplete="on">
- <h1>Sellpy-Dashboard</h1><p>Privat. Bitte Passwort eingeben.</p>
- <input type="text" name="username" value="sellpy" autocomplete="username" hidden>
+ <img src="icons/icon-192.png" alt="" width="56" height="56" style="border-radius:13px;display:block;margin-bottom:12px">
+ <h1>SellDash</h1><p>Dein Sellpy-Dashboard. Bitte Passwort eingeben.</p>
+ <input type="text" name="username" value="selldash" autocomplete="username" hidden>
  <input id="pw" type="password" autocomplete="current-password" placeholder="Passwort" autofocus>
  <label><input id="rm" type="checkbox"> Auf diesem Gerät angemeldet bleiben</label>
  <button>Öffnen</button><div id="err"></div>

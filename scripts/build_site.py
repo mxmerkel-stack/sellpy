@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shutil
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -157,6 +158,12 @@ def main():
     html = (ROOT / "site" / "template.html").read_text().replace("__DATA__", blob, 1)
     DIST.mkdir(parents=True, exist_ok=True)
     (DIST / "index.html").write_text(html)
+    shutil.copytree(ROOT / "site" / "icons", DIST / "icons", dirs_exist_ok=True)
+    (DIST / "manifest.webmanifest").write_text(json.dumps({
+        "name": "SellDash", "short_name": "SellDash", "start_url": "./", "scope": "./", "display": "standalone",
+        "background_color": "#2a78d6", "theme_color": "#2a78d6", "lang": "de",
+        "icons": [{"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                  {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}]}))
     print(f"ok: dist/index.html gebaut ({len(payload.get('sales', []))} Verkäufe, {len(payload.get('items', []))} Artikel)")
 
 
