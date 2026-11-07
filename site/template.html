@@ -72,6 +72,13 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   padding:6px 9px;border-radius:8px;opacity:0;transition:opacity .1s;z-index:10;max-width:240px}
 footer{color:var(--text-muted);font-size:12px;margin-top:18px}
 .empty{color:var(--text-muted);font-size:13px;padding:8px 0}
+tr.ord{cursor:pointer}
+@media(max-width:599px){.wide{display:none}}
+tr.ord:hover td{background:var(--grid)}
+tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
+.sub ul{margin:4px 0;padding-left:16px}
+.sub li{margin:2px 0}
+.ret{color:var(--text-muted);text-decoration:line-through}
 .more{font:inherit;font-size:13px;margin-top:8px;border:1px solid var(--line);background:transparent;color:var(--text-secondary);border-radius:9px;padding:6px 12px;cursor:pointer}
 </style>
 </head>
@@ -154,18 +161,24 @@ footer{color:var(--text-muted);font-size:12px;margin-top:18px}
       <div class="card"><h2>Kategorien</h2><div class="note">nach Ausgaben</div><div id="c-bcats"></div></div>
       <div class="card"><h2>Für wen</h2><div class="note">Anzahl gekaufter Artikel</div><div id="c-bdemo"></div></div>
       <div class="card"><h2>Behalten oder zurück</h2><div class="note">gekaufte Artikel nach Status</div><div id="c-bstatus"></div></div>
+      <div class="card"><h2>Rückgabequote je Kategorie</h2><div class="note">Anteil zurückgeschickter Artikel</div><div id="c-bret"></div></div>
+      <div class="card"><h2>Rückgabequote je Bestellung</h2><div class="note">wie viel jeweils zurückging</div><div id="c-bret2"></div></div>
     </div>
     <div class="card">
       <h2>Bestellungen</h2>
       <div class="note" id="o-note"></div>
       <div class="tbl-wrap"><table id="otbl"><thead><tr>
-        <th>Datum</th><th class="num">Artikel</th><th class="num">Zurück</th><th class="num">Betrag</th><th class="num">davon Credits</th><th>Status</th>
+        <th>Datum</th><th class="num">Behalten</th><th class="num">Zurück</th><th class="num wide">Bezahlt</th><th class="num wide">Erstattet</th><th class="num">Effektiv</th>
       </tr></thead><tbody></tbody></table></div>
+      <div class="note" style="margin-top:8px">Tippe auf eine Bestellung, um die Artikel zu sehen.</div>
     </div>
     <div class="card">
       <h2>Alle gekauften Artikel</h2>
       <div class="note" id="p-note"></div>
       <div class="tbl-tools"><input id="pq" type="search" placeholder="Suchen: Marke, Artikel, Größe …" aria-label="Käufe durchsuchen"></div>
+      <div class="seg" id="f-pstat" style="margin-bottom:8px">
+        <button data-v="all" aria-pressed="true">Alle</button><button data-v="Behalten">Behalten</button><button data-v="Zurückgeschickt">Zurück</button>
+      </div>
       <div class="tbl-wrap"><table id="ptbl"><thead><tr>
         <th>Datum</th><th>Marke</th><th>Artikel</th><th>Größe</th><th class="num">Preis</th><th>Status</th>
       </tr></thead><tbody></tbody></table></div>
@@ -365,49 +378,78 @@ D.purchases.forEach(p => p.t = new Date(p.at)); D.orders.forEach(o => o.t = new 
 const inRange = x => state.range === "all" || Date.now() - x.t <= state.range * DAY;
 let pLimit = 25, pq = "";
 function demoOf(p){ return p.kids ? "Kinder" : "Erwachsene"; }
+let pStat = "all"; const openOrders = new Set();
 function renderBuys(){
   const P = D.purchases.filter(p => inRange(p) && kidsOk(p));
   const O = D.orders.filter(o => inRange(o) && o.status !== "Storniert" && (state.kids === "all" || D.purchases.some(p => p.order === o.id && kidsOk(p))));
-  const spent = sum(O, o => o.total), kept = P.filter(p => p.status === "Behalten"), back = P.filter(p => p.status === "Zurückgegeben");
-  const afterReturns = spent - sum(back, p => p.price);
+  const spent = sum(O, o => o.total);
+  const kept = P.filter(p => p.status === "Behalten"), back = P.filter(p => p.status === "Zurückgeschickt");
+  const refunded = sum(O, o => o.has_lines ? o.refunded : o.returned_value);
+  const effective = spent - refunded;
   const S = filtered(), fees = sum((D.unsold_fees || []).filter(f => inRange({t:new Date(f.at)}) && kidsOk(f)), f => f.amount);
   const earned = sum(S, s => s.net) + fees;
   const tiles = [
-    ["Ausgegeben", eur.format(spent), `${O.length} Bestellungen`],
-    ["Nach Rückgaben", eur.format(afterReturns), back.length ? `${back.length} Artikel zurück (geschätzt)` : "keine Rückgaben"],
-    ["Gekaufte Artikel", P.length.toLocaleString("de-DE"), `${kept.length} behalten`],
-    ["Ø Preis je Artikel", P.length ? eur.format(sum(P, p => p.price) / P.length) : "–", `Median ${eur.format(median(P.map(p => p.price)))}`],
-    ["Mit Credits bezahlt", eur.format(sum(O, o => o.credits)), spent ? `${pct(sum(O, o => o.credits) / spent)} der Ausgaben` : ""],
-    ["Versand & Express", eur.format(sum(O, o => o.freight)), `${O.filter(o => o.fast).length}× Express`],
-    ["Bilanz", eur.format(earned - afterReturns), "Netto-Verkäufe minus Käufe"],
-    ["Rückgabequote", P.length ? pct(back.length / P.length) : "–", "Artikel nicht behalten"],
+    ["Bezahlt", eur.format(spent), `${O.length} Bestellungen · ${P.length} Artikel`],
+    ["Erstattet", eur.format(refunded), `${back.length} Artikel zurückgeschickt`],
+    ["Effektiv ausgegeben", eur.format(effective), "bezahlt minus Erstattungen"],
+    ["Behalten", `${kept.length} Artikel`, `Wert ${eur.format(sum(kept, p => p.price))}`],
+    ["Rückgabequote", P.length ? pct(back.length / P.length) : "–", P.length ? `${back.length} von ${P.length} Artikeln` : ""],
+    ["Ø Preis behalten", kept.length ? eur.format(sum(kept, p => p.price) / kept.length) : "–", `Median ${eur.format(median(kept.map(p => p.price)))}`],
+    ["Mit Credits bezahlt", eur.format(sum(O, o => o.credits)), spent ? `${pct(sum(O, o => o.credits) / spent)} der Zahlungen` : ""],
+    ["Bilanz", eur.format(earned - effective), "Netto-Verkäufe minus effektive Käufe"],
   ];
   document.getElementById("b-kpis").innerHTML = tiles.map(([k, v, d]) =>
     `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
-  timeBars({el:"c-buys", title:"b-time-title", note:"b-time-note", rows:O, val:o => o.total, word:"Ausgaben",
-    noteText:"Summe der Bestellungen inkl. Versand", tipVal:"ausgegeben", unit:"Bestellungen"});
-  const g = key => { const m = new Map(); for (const p of P) { const k = key(p); const r = m.get(k) || {label:k, v:0, n:0}; r.v += p.price; r.n++; m.set(k, r); } return [...m.values()].sort((a, b) => b.v - a.v); };
+  timeBars({el:"c-buys", title:"b-time-title", note:"b-time-note", rows:O, val:o => o.total - (o.has_lines ? o.refunded : o.returned_value),
+    extra:o => o.total, word:"Ausgaben", noteText:"Effektiv: bezahlt minus Erstattungen", tipVal:"effektiv", tipExtra:"bezahlt", unit:"Bestellungen"});
+  const g = (rows, key) => { const m = new Map(); for (const p of rows) { const k = key(p); const r = m.get(k) || {label:k, v:0, n:0}; r.v += p.price; r.n++; m.set(k, r); } return [...m.values()].sort((a, b) => b.v - a.v); };
   const tipB = r => `<b>${esc(r.label)}</b><br>${eur.format(r.v)} · ${r.n} Artikel`;
-  const br = g(p => p.brand);
-  document.getElementById("n-bbrands").textContent = br.length > 10 ? `nach Ausgaben, Top 10 von ${br.length}` : "nach Ausgaben";
+  const br = g(kept, p => p.brand);
+  document.getElementById("n-bbrands").textContent = br.length > 10 ? `behalten, nach Wert · Top 10 von ${br.length}` : "behalten, nach Wert";
   hbars("c-bbrands", br.slice(0, 10), r => eur.format(r.v), tipB);
-  hbars("c-bcats", g(p => p.category), r => eur.format(r.v), tipB);
-  hbars("c-bdemo", g(demoOf).map(r => ({...r, v:r.n})), r => r.n, tipB);
-  hbars("c-bstatus", g(p => p.status).map(r => ({...r, v:r.n})), r => r.n, r => `<b>${esc(r.label)}</b><br>${r.n} Artikel · ${eur.format(sum(P.filter(p => p.status === r.label), p => p.price))}`);
-  document.querySelector("#otbl tbody").innerHTML = [...O].reverse().map(o =>
-    `<tr><td>${dFmt.format(o.t)}</td><td class="num">${o.items}</td><td class="num">${o.returned || ""}</td><td class="num">${eur.format(o.total)}</td>` +
-    `<td class="num">${o.credits ? eur.format(o.credits) : ""}</td><td>${esc(o.status)}${o.fast ? '<span class="pill">Express</span>' : ""}</td></tr>`).join("")
-    || `<tr><td colspan="6" class="empty">Keine Bestellungen.</td></tr>`;
-  document.getElementById("o-note").textContent = `${O.length} Bestellungen · ${eur.format(spent)}`;
+  hbars("c-bcats", g(kept, p => p.category), r => eur.format(r.v), tipB);
+  hbars("c-bdemo", g(kept, demoOf).map(r => ({...r, v:r.n})), r => r.n, tipB);
+  hbars("c-bstatus", g(P, p => p.status).map(r => ({...r, v:r.n})), r => r.n, r => `<b>${esc(r.label)}</b><br>${r.n} Artikel · ${eur.format(r.v)}`);
+  const cats = new Map(); for (const p of P) { const c = cats.get(p.category) || {label:p.category, n:0, b:0}; c.n++; if (p.status === "Zurückgeschickt") c.b++; cats.set(p.category, c); }
+  hbars("c-bret", [...cats.values()].filter(c => c.n >= 3).map(c => ({...c, v:c.b / c.n})).sort((a, b) => b.v - a.v), r => pct(r.v),
+    r => `<b>${esc(r.label)}</b><br>${r.b} von ${r.n} zurück`);
+  hbars("c-bret2", [...O].reverse().slice(0, 12).map(o => ({label:dFmt.format(o.t), v:o.items ? o.returned / o.items : 0, o})), r => pct(r.v),
+    r => `<b>Bestellung vom ${r.label}</b><br>${r.o.kept} behalten · ${r.o.returned} zurück`);
+  document.querySelector("#otbl tbody").innerHTML = [...O].reverse().map(o => {
+    const eff = o.total - (o.has_lines ? o.refunded : o.returned_value);
+    let h = `<tr class="ord" data-id="${o.id}"><td>${openOrders.has(o.id) ? "▾" : "▸"} ${dFmt.format(o.t)}</td>` +
+      `<td class="num">${o.kept} · ${eur0.format(o.kept_value)}</td><td class="num">${o.returned ? `${o.returned} · ${eur0.format(o.returned_value)}` : "–"}</td>` +
+      `<td class="num wide">${eur.format(o.total)}</td><td class="num wide">${(o.has_lines ? o.refunded : o.returned_value) ? eur.format(o.has_lines ? o.refunded : o.returned_value) : "–"}</td>` +
+      `<td class="num"><b>${eur.format(eff)}</b></td></tr>`;
+    if (openOrders.has(o.id)) {
+      const its = D.purchases.filter(p => p.order === o.id);
+      const li = st => its.filter(p => p.status === st).map(p => `<li class="${st === "Zurückgeschickt" ? "ret" : ""}">${esc(p.brand)} · ${esc(p.kind)}${p.size ? " · " + esc(p.size) : ""} · ${eur.format(p.price)}</li>`).join("");
+      h += `<tr class="sub"><td colspan="6"><b>Behalten (${o.kept})</b><ul>${li("Behalten") || "<li>–</li>"}</ul>` +
+        `<b>Zurückgeschickt (${o.returned})</b><ul>${li("Zurückgeschickt") || "<li>–</li>"}</ul>` +
+        `Bezahlt ${eur.format(o.total)} · erstattet ${eur.format(o.has_lines ? o.refunded : o.returned_value)}. ` + (o.credits ? `Mit Credits bezahlt: ${eur.format(o.credits)}. ` : "") + (o.fast ? "Express-Bearbeitung. " : "") +
+        (o.return_fees ? `Rücksendekosten: ${eur.format(o.return_fees)}.` : "") + `</td></tr>`;
+    }
+    return h;
+  }).join("") || `<tr><td colspan="6" class="empty">Keine Bestellungen.</td></tr>`;
+  document.getElementById("o-note").textContent = `${O.length} Bestellungen · bezahlt ${eur.format(spent)} · effektiv ${eur.format(effective)}`;
   const q = pq.trim().toLowerCase();
-  const rows = [...P].reverse().filter(p => !q || `${p.brand} ${p.kind} ${p.size} ${p.category}`.toLowerCase().includes(q));
+  const rows = [...P].reverse().filter(p => (pStat === "all" || p.status === pStat) && (!q || `${p.brand} ${p.kind} ${p.size} ${p.category}`.toLowerCase().includes(q)));
   document.querySelector("#ptbl tbody").innerHTML = rows.slice(0, pLimit).map(p =>
     `<tr><td>${dFmt.format(p.t)}</td><td>${esc(p.brand)}</td><td>${esc(p.kind)}${p.kids ? '<span class="pill">Kind</span>' : ""}</td>` +
-    `<td>${esc(p.size)}</td><td class="num">${eur.format(p.price)}</td><td>${esc(p.status)}</td></tr>`).join("")
+    `<td>${esc(p.size)}</td><td class="num">${eur.format(p.price)}</td><td>${p.status === "Zurückgeschickt" ? "zurück" : "behalten"}</td></tr>`).join("")
     || `<tr><td colspan="6" class="empty">Keine Treffer.</td></tr>`;
   document.getElementById("p-note").textContent = `${rows.length} Artikel · ${eur.format(sum(rows, p => p.price))}`;
   const more = document.getElementById("pmore"); more.hidden = rows.length <= pLimit; more.textContent = `Alle ${rows.length} anzeigen`;
 }
+document.getElementById("otbl").addEventListener("click", e => {
+  const tr = e.target.closest("tr.ord"); if (!tr) return;
+  const id = tr.dataset.id; openOrders.has(id) ? openOrders.delete(id) : openOrders.add(id); renderBuys();
+});
+document.getElementById("f-pstat").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  for (const x of e.currentTarget.children) x.setAttribute("aria-pressed", x === b);
+  pStat = b.dataset.v; pLimit = 25; renderBuys();
+});
 document.getElementById("pq").addEventListener("input", e => { pq = e.target.value; renderBuys(); });
 document.getElementById("pmore").addEventListener("click", () => { pLimit = 1e9; renderBuys(); });
 document.getElementById("f-tab").addEventListener("click", e => {
@@ -443,7 +485,7 @@ function render(){
 }
 const built = new Date(D.built_at);
 document.getElementById("stand").textContent = `Stand ${dFmt.format(built)}, ${built.toLocaleTimeString("de-DE", {hour:"2-digit", minute:"2-digit"})} Uhr · ${D.sales.length} Verkäufe · ${(D.purchases || []).length} Käufe`;
-document.getElementById("foot").textContent = "Quelle: dein Sellpy-Konto. Netto = Verkaufspreis minus Sellpy-Provision und Anzeigengebühr, so wie Sellpy es je Artikel bucht. Rückgaben bei Käufen sind geschätzt: Ein gekaufter Artikel, der nicht mehr als bezahlt gilt, zählt als zurückgegeben.";
+document.getElementById("foot").textContent = "Quelle: dein Sellpy-Konto. Netto = Verkaufspreis minus Sellpy-Provision und Anzeigengebühr, so wie Sellpy es je Artikel bucht. Rücksendungen und Erstattungen bei Käufen kommen direkt von Sellpy.";
 if (!D.items.some(i => i.kids) && !D.purchases.some(p => p.kids)) document.getElementById("f-kids").hidden = true;
 try { if (localStorage.getItem("selldash-tab") === "buys") document.querySelector('#f-tab [data-v="buys"]').click(); } catch (_) {}
 render();

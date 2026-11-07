@@ -166,6 +166,18 @@ def main():
               items { ... on Item { objectId itemStatus localizedMetadata(locale: "de") } } } }
           } }""", "orders", {"uid": uid})
         print(f"Bestellungen: {len(orders)}")
+        ids = [o["objectId"] for o in orders]
+        claims = s.pages("""query R($ids: [ID!], $first: Int, $after: String) {
+          itemClaims(where: {order: {have: {objectId: {in: $ids}}}}, first: $first, after: $after) {
+            pageInfo { hasNextPage endCursor }
+            edges { node { objectId createdAt status type offer paidAt item { objectId } order { objectId } } }
+          } }""", "itemClaims", {"ids": ids}) if ids else []
+        from collections import Counter
+        print(f"Rücksendungen/Reklamationen: {len(claims)} {dict(Counter((c.get('type'), c.get('status')) for c in claims))}")
+        for o in orders:
+            r = s.q("query L($id: ID!) { fetchLineItemsByOrder(orderId: $id) { type amountIncludingTax discountAmount } }",
+                    {"id": o["objectId"]}, allow_errors=True)
+            o["lineItems"] = (r.get("data") or {}).get("fetchLineItemsByOrder") or []
         credit_now = s.q('query { currentUserCredit(currency: "EUR") }', allow_errors=True).get("data", {}).get("currentUserCredit")
         print(f"Credit-Buchungen: {len(credits)}")
         browser.close()
@@ -174,7 +186,7 @@ def main():
     print(f"Artikel-Merkmale: {', '.join(meta_keys)}")
 
     snapshot = {"fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "items": items, "balance": balance,
-                "bags": bags, "credits": credits, "orders": orders, "credit_now": credit_now, "item_fields": fields}
+                "bags": bags, "credits": credits, "orders": orders, "claims": claims, "credit_now": credit_now, "item_fields": fields}
 
     # Verlauf: Artikel und Buchungen werden zusammengeführt, damit nichts verloren geht
     hist_path = DATA / "history.enc"
@@ -183,7 +195,7 @@ def main():
     except Exception:
         print("Verlauf nicht lesbar (anderes Seitenpasswort?) – starte neu.")
         hist = {}
-    for key in ("items", "balance", "bags", "credits", "orders"):
+    for key in ("items", "balance", "bags", "credits", "orders", "claims"):
         merged = {x["objectId"]: x for x in hist.get(key, [])}
         merged.update({x["objectId"]: x for x in snapshot[key]})
         snapshot[key] = list(merged.values())

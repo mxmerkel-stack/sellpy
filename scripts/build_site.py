@@ -21,6 +21,7 @@ STATUS = {
     "tillbakaskickad": "Zurückgeschickt", "borttagen": "Entfernt",
 }
 SOLD = {"betald", "såld"}
+REJECTED_CLAIMS = {"rejected", "denied", "declined", "canceled", "cancelled", "nekad", "avslagen"}
 KIDS_SIZES = set(range(62, 177, 6))
 CATEGORIES = [
     ("Bodys & Strampler", ["body", "strampler", "overall", "jumpsuit", "spucktuch", "lätzchen", "tragetuch"]),
@@ -145,6 +146,9 @@ def transform(raw):
                      "online": sum(1 for i in bi if i["status"] == "Online"),
                      "gross": sum(s["price"] for s in bs), "net": sum(s["net"] or 0 for s in bs)})
     purchases, orders = [], []
+    # Rücksendungen: Sellpy führt sie als "itemClaims"; abgelehnte zählen nicht
+    returned_ids = {c["item"]["objectId"] for c in raw.get("claims", [])
+                    if c.get("item") and str(c.get("status", "")).lower() not in REJECTED_CLAIMS}
     for o in raw.get("orders", []):
         pay = {}
         for el in o.get("itemPayments") or []:
@@ -152,6 +156,10 @@ def transform(raw):
             pay[v.get("itemId")] = (v.get("payment") or {}).get("amount")
         canceled = bool(o.get("dateCanceled")) or o.get("status") in ("canceled", "cancelled")
         total = (o.get("orderPayment") or {}).get("amount") or 0
+        li = o.get("lineItems") or []
+        cents = lambda x: ((x or {}).get("amount") or 0) / 100  # noqa: E731
+        refunded = sum(cents(l.get("amountIncludingTax")) for l in li if l.get("type") in ("ITEM_REFUND", "FREIGHT_REFUND"))
+        return_fees = sum(cents(l.get("amountIncludingTax")) for l in li if l.get("type") == "CLAIM_FREIGHT")
         o_items = []
         for it in o.get("items") or []:
             meta = it.get("localizedMetadata") or {}
@@ -159,18 +167,22 @@ def transform(raw):
             kind = flat(meta.get("type")) or "Artikel"
             if meta.get("title"):
                 kind = f"{kind}: {flat(meta['title'])}"
-            kept = it.get("itemStatus") in ("betald", "såld")
+            back = it["objectId"] in returned_ids
             row = {"order": o["objectId"], "at": o.get("datePaid") or o.get("createdAt"),
                    "brand": flat(meta.get("brand")) or "Ohne Marke", "kind": kind, "size": nice_size(raw_size),
                    "condition": flat(meta.get("condition")), "category": category(flat(meta.get("type"))),
                    "kids": is_kids(meta, raw_size), "price": pay.get(it["objectId"]) or 0,
-                   "status": "Storniert" if canceled else ("Behalten" if kept else "Zurückgegeben")}
+                   "status": "Storniert" if canceled else ("Zurückgeschickt" if back else "Behalten")}
             o_items.append(row)
             purchases.append(row)
+        kept = [r for r in o_items if r["status"] == "Behalten"]
+        back = [r for r in o_items if r["status"] == "Zurückgeschickt"]
         orders.append({"id": o["objectId"], "at": o.get("datePaid") or o.get("createdAt"), "total": 0 if canceled else total,
                        "freight": (o.get("freightPayment") or {}).get("amount") or 0, "fast": bool(o.get("isFastHandling")),
                        "credits": ((o.get("creditPaymentCapture") or {}).get("amount") or 0) / 100,
-                       "items": len(o_items), "returned": sum(1 for r in o_items if r["status"] == "Zurückgegeben"),
+                       "items": len(o_items), "kept": len(kept), "kept_value": sum(r["price"] for r in kept),
+                       "returned": len(back), "returned_value": sum(r["price"] for r in back),
+                       "refunded": refunded, "return_fees": return_fees, "has_lines": bool(li),
                        "status": "Storniert" if canceled else ("Geliefert" if o.get("dateDelivered") else "Unterwegs"),
                        "kids": bool(o_items) and all(r["kids"] for r in o_items)})
     credits = [{"at": c["createdAt"], "type": c["type"], "amount": c["delta"]["amount"] / 100} for c in raw.get("credits", [])]
