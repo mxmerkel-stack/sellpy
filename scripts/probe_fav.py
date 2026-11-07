@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Temporär: prüft Favoriten-Abfragen und Artikelfelder. Ausgabe verschlüsselt."""
+"""Temporär: findet heraus, wie die Favoritenseite Artikeldaten lädt. Ausgabe verschlüsselt."""
 import json, sys, re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fetch_sellpy as F
 
-out = {"fields": {}, "wish_counts": {}}
+out = {"net": [], "variants": {}}
 with sync_playwright() as p:
     b = p.chromium.launch(headless=True)
     ctx = b.new_context(locale="de-DE", timezone_id="Europe/Berlin", viewport={"width": 1280, "height": 900},
@@ -22,40 +22,35 @@ with sync_playwright() as p:
         if sess.get("token"): break
         page.wait_for_timeout(500)
     s = F.Sellpy(page, sess["token"], sess["app"])
-    uid = s.q("query { currentUser { objectId } }")["data"]["currentUser"]["objectId"]
-    # alle Wunschlisten-Einträge, ohne Filter auf aktiv/ausgewählt
-    w = s.pages("""query W($uid: ID!, $first: Int, $after: String) {
-      itemWishlists(where: {user: {have: {objectId: {equalTo: $uid}}}}, first: $first, after: $after, order: updatedAt_DESC) {
-        pageInfo { hasNextPage endCursor }
-        edges { node { objectId createdAt updatedAt selected active item { objectId } itemFavoriteLists { ... on ItemFavoriteList { objectId } } } } } }""",
-        "itemWishlists", {"uid": uid})
-    from collections import Counter
-    out["wish_counts"] = dict(Counter(f"selected={x.get('selected')} active={x.get('active')}" for x in w))
-    out["wish_n"] = len(w)
-    ids = [x["item"]["objectId"] for x in w if x.get("item")]
-    out["wishlists"] = w[:400]
-    cands = ["itemStatus", "sellerItemStatus", "createdAt", "updatedAt", "value { amount currency }", "price { amount currency }",
-             "originalPrice { amount currency }", "headline", "site", "p2p", "shelfId", "localizedMetadata(locale: \"de\")",
-             "photos { ... on Element { value } }", "user { objectId }", "bag { objectId }", "putOnShelfAt", "soldAt", "paidAt",
-             "listedAt", "publishedAt", "featuredIn { ... on Element { value } }", "marketOffer { objectId pricing }"]
-    good = []
-    for c in cands:
-        r = s.q("query($ids:[ID!]){ items(where:{objectId:{in:$ids}}, first: 5){ edges { node { objectId %s } } } }" % c, {"ids": ids[:5]}, allow_errors=True)
-        ok = not r.get("errors")
-        out["fields"][c] = "ok" if ok else (r["errors"][0].get("message", "")[:160])
-        if ok: good.append(c)
-    q = "query($ids:[ID!],$first:Int){ items(where:{objectId:{in:$ids}}, first:$first){ edges { node { objectId %s } } } }" % " ".join(good)
-    items = []
-    for i in range(0, len(ids), 100):
-        r = s.q(q, {"ids": ids[i:i+100], "first": 100}, allow_errors=True)
-        items += [e["node"] for e in ((r.get("data") or {}).get("items") or {}).get("edges", [])]
-    out["items"] = items; out["n_ids"] = len(ids)
-    for name, qq in {"brandGroups": "query { getFavoriteBrandGroups { group { objectId name } brands } }",
-                     "lists": "query($u:ID!){ itemFavoriteLists(where:{user:{have:{objectId:{equalTo:$u}}}}, first: 50){ edges { node { objectId name status public } } } }"}.items():
-        r = s.q(qq, {"u": uid} if "$u" in qq else None, allow_errors=True)
-        out[name] = r.get("data") or r.get("errors")
+    w = s.q("query { itemWishlists(where:{selected:{equalTo:true},active:{equalTo:true}}, first: 1000, order: updatedAt_DESC) { edges { node { createdAt item { objectId } } } } }")["data"]["itemWishlists"]["edges"]
+    ids = [e["node"]["item"]["objectId"] for e in w]
+    out["ids"] = ids
+    def on_resp(r):
+        u = r.url
+        if re.search(r"\.(png|jpe?g|webp|svg|css|js|woff2?|ico|gif|avif)(\?|$)", u): return
+        try: body = r.text()
+        except Exception: body = ""
+        req = r.request.post_data or ""
+        hit = any(i in body or i in req or i in u for i in ids[:30])
+        if "graphql" in u and not hit: return
+        out["net"].append({"url": u[:300], "m": r.request.method, "req": req[:1500], "hit": hit, "resp": body[:1500] if hit else ""})
+    page.on("response", on_resp)
+    page.goto(F.BASE + "/my-shopping/favorites", wait_until="domcontentloaded", timeout=60000)
+    page.wait_for_timeout(9000)
+    out["text"] = (page.inner_text("body") or "")[:1500]
+    page.remove_listener("response", on_resp)
+    i0 = ids[0]
+    V = {
+      "equalTo": "query($i:ID!){ items(where:{objectId:{equalTo:$i}}, first:1){ edges { node { objectId itemStatus headline localizedMetadata(locale:\"de\") value { amount currency } } } } }",
+      "item": "query($i:ID!){ item(id:$i){ objectId itemStatus headline localizedMetadata(locale:\"de\") value { amount currency } } }",
+      "node": "query($i:ID!){ node(id:$i){ id ... on Item { objectId itemStatus headline localizedMetadata(locale:\"de\") value { amount currency } } } }",
+      "in_nofirst": "query($i:[ID!]){ items(where:{objectId:{in:$i}}){ edges { node { objectId itemStatus headline localizedMetadata(locale:\"de\") value { amount currency } } } } }",
+    }
+    for k, qq in V.items():
+        v = {"i": ids[:5]} if k == "in_nofirst" else {"i": i0}
+        r = s.q(qq, v, allow_errors=True)
+        out["variants"][k] = json.dumps(r)[:1200]
     b.close()
 Path("data").mkdir(exist_ok=True)
 Path("data/probe.json").write_text(json.dumps(out, ensure_ascii=False))
-print("fields:", json.dumps(out["fields"], ensure_ascii=False))
-print("wish_counts:", out["wish_counts"], "items:", len(out["items"]), "of", out["n_ids"])
+print("net:", len(out["net"]), "hits:", sum(1 for n in out["net"] if n["hit"]))
