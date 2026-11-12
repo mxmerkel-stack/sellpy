@@ -83,6 +83,7 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
 </style>
 </head>
 <body>
+<script>window.addEventListener("error", e => { const d = document.createElement("div"); d.style.cssText = "margin:12px;padding:12px;border-radius:10px;background:#fde8e8;color:#8a1c1c;font:13px system-ui"; d.textContent = "Fehler im Dashboard: " + e.message + " (Zeile " + e.lineno + ")"; document.body.prepend(d); });</script>
 <div class="viz-root">
 <div class="wrap">
   <header>
