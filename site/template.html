@@ -221,6 +221,7 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
 </div>
 
 <script>
+(() => {
 const D = __DATA__;
 const eur = new Intl.NumberFormat("de-DE", {style:"currency", currency:"EUR"});
 const eur0 = new Intl.NumberFormat("de-DE", {style:"currency", currency:"EUR", maximumFractionDigits:0});
@@ -608,6 +609,7 @@ if (!D.items.some(i => i.kids) && !D.purchases.some(p => p.kids) && !D.favs.some
 try { const t = localStorage.getItem("selldash-tab"); if (t === "buys" || t === "favs") document.querySelector(`#f-tab [data-v="${t}"]`).click(); } catch (_) {}
 render();
 let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(render, 150); });
+})();
 </script>
 </body>
 </html>

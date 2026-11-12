@@ -62,13 +62,17 @@ async function derive(pw){
   const bits = await crypto.subtle.deriveBits({name:"PBKDF2", salt:b64(P.salt), iterations:P.iter, hash:"SHA-256"}, base, 256);
   return new Uint8Array(bits);
 }
+let opened = false;
 async function open(raw){
+  if (opened) return;
   const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
   const plain = await crypto.subtle.decrypt({name:"AES-GCM", iv:b64(P.iv)}, key, b64(P.data));
+  opened = true;
   document.open(); document.write(new TextDecoder().decode(plain)); document.close();
 }
+const loaded = new Promise(r => document.readyState === "complete" ? r() : window.addEventListener("load", r));
 (async () => {
-  try { const k = localStorage.getItem(KEY_STORE); if (k) { await open(b64(k)); return; } }
+  try { const k = localStorage.getItem(KEY_STORE); if (k) { await loaded; await open(b64(k)); return; } }
   catch (e) { try { localStorage.removeItem(KEY_STORE); } catch (_) {} }
 })();
 document.getElementById("f").addEventListener("submit", async e => {
@@ -76,7 +80,7 @@ document.getElementById("f").addEventListener("submit", async e => {
   try {
     const raw = await derive(document.getElementById("pw").value);
     if (document.getElementById("rm").checked) { try { localStorage.setItem(KEY_STORE, btoa(String.fromCharCode(...raw))); } catch (_) {} }
-    await open(raw);
+    await loaded; await open(raw);
   } catch (x) { err.textContent = "Falsches Passwort."; }
 });
 </script></body></html>
