@@ -598,23 +598,23 @@ function shareRatio(){
 }
 function renderPend(){
   const ratio = shareRatio();
-  const P = (D.pending || []).map(p => ({...p, share: p.price * ratio(p.price), t: new Date(p.sold_at), pt: p.pay_est ? new Date(p.pay_est) : null}))
+  const P = (D.pending || []).map(p => ({...p, share: p.price * ratio(p.price), t: new Date(p.sold_at), pt: p.pay_est ? new Date(p.pay_est) : null, dl: p.pay_latest ? new Date(p.pay_latest) : null}))
     .sort((a, b) => a.t - b.t);
   const lates = P.filter(p => p.pt && p.pt < Date.now()).length;
   const tiles = [
     ["Artikel", P.length.toLocaleString("de-DE"), "verkauft, noch nicht gutgeschrieben"],
     ["Verkaufspreise", eur.format(sum(P, p => p.price)), "zusammen"],
     ["Erwarteter Anteil", eur.format(sum(P, p => p.share)), P.length ? `≈ ${pct(sum(P, p => p.share) / sum(P, p => p.price))} vom Preis (Schätzung)` : ""],
-    ["Typische Wartezeit", D.lag_median != null ? `${D.lag_median} Tage` : "noch offen", D.lag_median != null ? `aus ${D.lag_n} abgerechneten Artikeln` : `braucht 3 Artikel mit Verlauf, bisher ${D.lag_n || 0}`],
+    ["Nächste Zahlung spätestens", P.some(p => p.dl) ? dFmt.format(new Date(Math.min(...P.filter(p => p.dl).map(p => +p.dl)))) : "–", D.lag_median != null ? `üblich: nach ${D.lag_median} Tagen (aus ${D.lag_n} Artikeln)` : "14 Tage nach Verkauf"],
   ];
   document.getElementById("p-kpis").innerHTML = tiles.map(([k, v, d]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
-  document.getElementById("p-note").textContent = "Sellpy nennt kein Zahlungsdatum. Es wird aus dem Verkaufsdatum plus der typischen Wartezeit bereits abgerechneter Artikel geschätzt. Das Verkaufsdatum ist die letzte Statusänderung des Artikels. Der Anteil ist ein Durchschnitt je Preisklasse. Filter gelten hier nicht.";
+  document.getElementById("p-note").textContent = "Die Sellpy-App nennt für jeden Artikel eine späteste Zahlung (hier: 14 Tage nach Verkauf, aus einem App-Beispiel abgeleitet). Sellpy liefert dieses Datum nicht direkt, es wird aus dem erkannten Verkaufsdatum berechnet und kann bei älteren Verkäufen abweichen. Der Anteil ist ein Durchschnitt je Preisklasse. Filter gelten hier nicht.";
   document.getElementById("p-list").innerHTML = P.map(p => {
     const days = Math.max(0, Math.round((Date.now() - p.t) / DAY));
-    const pay = p.pt ? (p.pt < Date.now() ? `Zahlung eigentlich schon fällig, wartet ${days} Tage` : `Zahlung voraussichtlich ${dFmt.format(p.pt)}`) : "Zahlungsdatum noch nicht schätzbar";
+    const pay = p.dl ? (p.dl < Date.now() ? `überfällig seit ${dFmt.format(p.dl)}` : `spätestens ${dFmt.format(p.dl)}`) + (p.pt && p.pt < p.dl ? `, meist ab ${dFmt.format(p.pt)}` : "") : "unbekannt";
     return `<div class="bag"><div class="hd"><b>${esc(p.brand)} · ${esc(p.kind)}${p.size ? " · " + esc(p.size) : ""}${p.kids ? '<span class="pill">Kind</span>' : ""}</b></div>` +
       `<dl><dt>Verkaufspreis</dt><dd>${eur.format(p.price)}</dd><dt>Anteil (geschätzt)</dt><dd>≈ ${eur.format(p.share)}</dd>` +
-      `<dt>Verkauft (ca.)</dt><dd>${dFmt.format(p.t)} · vor ${days} Tagen</dd><dt>Zahlung</dt><dd>${pay}</dd>` +
+      `<dt>Verkauft (erkannt)</dt><dd>${dFmt.format(p.t)} · vor ${days} Tagen</dd><dt>Zahlung</dt><dd>${pay}</dd>` +
       `<dt>Tasche vom</dt><dd>${p.bag_date ? dFmt.format(new Date(p.bag_date)) : "–"}</dd></dl></div>`;
   }).join("") || `<div class="empty">Aktuell ist nichts verkauft und nicht abgerechnet.</div>`;
 }

@@ -22,6 +22,7 @@ STATUS = {
 }
 SOLD = {"betald", "såld"}
 REJECTED_CLAIMS = {"rejected", "denied", "declined", "canceled", "cancelled", "nekad", "avslagen"}
+PAY_DEADLINE_DAYS = 14  # Sellpy-App: "Anteil spätestens am ..." = 14 Tage nach Verkauf (aus einem Beispiel abgeleitet)
 KIDS_SIZES = set(range(62, 177, 6))
 CATEGORIES = [
     ("Bodys & Strampler", ["body", "strampler", "overall", "jumpsuit", "spucktuch", "lätzchen", "tragetuch"]),
@@ -177,7 +178,8 @@ def transform(raw):
         d0 = day(sold)
         pay = (d0 + timedelta(days=lag_median)).isoformat() if d0 is not None and lag_median is not None else None
         pending.append({"id": row["id"], "brand": row["brand"], "kind": row["kind"], "size": row["size"], "price": row["price"], "kids": row["kids"],
-                        "bag": row["bag"], "bag_date": bag_dates.get(row["bag"]), "sold_at": sold, "pay_est": pay})
+                        "bag": row["bag"], "bag_date": bag_dates.get(row["bag"]), "sold_at": sold, "pay_est": pay,
+                        "pay_latest": (d0 + timedelta(days=PAY_DEADLINE_DAYS)).isoformat() if d0 is not None else None})
     purchases, orders = [], []
     # Rücksendungen: Sellpy führt sie als "itemClaims"; abgelehnte zählen nicht
     claim_type = {c["item"]["objectId"]: c.get("type") for c in raw.get("claims", [])
