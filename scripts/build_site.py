@@ -5,7 +5,7 @@ import os
 import re
 import shutil
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -155,6 +155,29 @@ def transform(raw):
                      "unsold_fee": unsold_by_bag.get(b["objectId"], 0.0),
                      "gone": sum(1 for i in bi if i["status"] in ("Gespendet", "Zurückgeschickt", "Entfernt", "Abgelehnt", "Verloren")),
                      "open_prices": [i["price"] for i in bi if i["status"] == "Online"]})
+    # Verkauft, aber noch nicht abgerechnet (Status "såld"): Sellpy nennt kein Zahlungsdatum,
+    # deshalb Wartezeit aus bereits abgerechneten Artikeln lernen (verkauft gesehen -> Gutschrift)
+    track = raw.get("sold_track") or {}
+    lags = []
+    for it in raw.get("items", []):
+        tr = track.get(it["objectId"])
+        if tr and it.get("paidAt") and it.get("itemStatus") == "betald":
+            d0, d1 = day(tr["sold"]), day(it["paidAt"])
+            if d0 and d1 and d1 >= d0:
+                lags.append((d1 - d0).days)
+    lag_median = sorted(lags)[len(lags) // 2] if len(lags) >= 3 else None
+    pending = []
+    for it in raw.get("items", []):
+        if it.get("itemStatus") != "såld":
+            continue
+        row = next((i for i in items if i["id"] == it["objectId"]), None)
+        if not row:
+            continue
+        sold = (track.get(it["objectId"]) or {}).get("sold") or it.get("updatedAt")
+        d0 = day(sold)
+        pay = (d0 + timedelta(days=lag_median)).isoformat() if d0 is not None and lag_median is not None else None
+        pending.append({"id": row["id"], "brand": row["brand"], "kind": row["kind"], "size": row["size"], "price": row["price"], "kids": row["kids"],
+                        "bag": row["bag"], "bag_date": bag_dates.get(row["bag"]), "sold_at": sold, "pay_est": pay})
     purchases, orders = [], []
     # Rücksendungen: Sellpy führt sie als "itemClaims"; abgelehnte zählen nicht
     claim_type = {c["item"]["objectId"]: c.get("type") for c in raw.get("claims", [])
@@ -225,6 +248,7 @@ def transform(raw):
     return {"items": items, "sales": sorted(sales, key=lambda s: s["sold_at"] or ""), "bags": sorted(bags, key=lambda b: b["created_at"] or ""),
             "payouts": payouts, "unsold_fees": unsold_fees, "credits": credits, "credit_now": raw.get("credit_now"), "other_tx_types": other_types, "purchases": sorted(purchases, key=lambda r: r["at"] or ""),
             "orders": sorted(orders, key=lambda r: r["at"] or ""),
+            "pending": sorted(pending, key=lambda r: r["sold_at"] or ""), "lag_median": lag_median, "lag_n": len(lags),
             "wish": sorted(wish_events, key=lambda e: e["at"] or ""), "favs": sorted(favs, key=lambda e: e["at"] or ""),
             "fetched_at": raw.get("fetched_at")}
 

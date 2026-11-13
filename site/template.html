@@ -103,6 +103,7 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
       <button data-v="buys">Käufe</button>
       <button data-v="favs">Favoriten</button>
       <button data-v="bags">Taschen</button>
+      <button data-v="pend">Nicht abgerechnet</button>
     </div>
   </div>
   <div class="filters" role="group" aria-label="Filter" style="margin-top:-6px">
@@ -225,6 +226,11 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
   <div id="tab-bags" hidden>
     <section class="kpis" id="t-kpis"></section>
     <div class="card"><h2>Saldo pro Tasche</h2><div class="note" id="t-note"></div><div id="t-list"></div></div>
+  </div>
+
+  <div id="tab-pend" hidden>
+    <section class="kpis" id="p-kpis"></section>
+    <div class="card"><h2>Verkauft, aber noch nicht abgerechnet</h2><div class="note" id="p-note"></div><div id="p-list"></div></div>
   </div>
 
   <footer id="foot"></footer>
@@ -510,7 +516,7 @@ document.getElementById("f-tab").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   for (const x of e.currentTarget.children) x.setAttribute("aria-pressed", x === b);
   state.tab = b.dataset.v;
-  for (const t of ["sales", "buys", "favs", "bags"]) document.getElementById("tab-" + t).hidden = state.tab !== t;
+  for (const t of ["sales", "buys", "favs", "bags", "pend"]) document.getElementById("tab-" + t).hidden = state.tab !== t;
   try { localStorage.setItem("selldash-tab", state.tab); } catch (_) {}
   hideTip(); render();
 });
@@ -584,11 +590,37 @@ document.getElementById("wq").addEventListener("input", e => { wq = e.target.val
 document.getElementById("wmore").addEventListener("click", () => { wLimit = 1e9; renderFavs(); });
 
 /* ---------- Taschen-Saldo ---------- */
-function renderBags(){
-  // Ø-Anteil je Preisklasse aus allen bisherigen Verkäufen (netto nach Provision und Anzeigengebühr)
+/* Ø-Anteil je Preisklasse aus allen bisherigen Verkäufen (netto nach Provision und Anzeigengebühr) */
+function shareRatio(){
   const edges = [0, 3, 5, 8, 12, 20, 35, Infinity];
   const rb = buckets(D.sales.filter(s => s.net != null), s => s.price, edges, "");
-  const ratio = p => { const i = edges.findIndex((lo, k) => p >= lo && p < edges[k + 1]); const r = rb[i]; return r && r.gross ? r.net / r.gross : 0; };
+  return p => { const i = edges.findIndex((lo, k) => p >= lo && p < edges[k + 1]); const r = rb[i]; return r && r.gross ? r.net / r.gross : 0; };
+}
+function renderPend(){
+  const ratio = shareRatio();
+  const P = (D.pending || []).map(p => ({...p, share: p.price * ratio(p.price), t: new Date(p.sold_at), pt: p.pay_est ? new Date(p.pay_est) : null}))
+    .sort((a, b) => a.t - b.t);
+  const lates = P.filter(p => p.pt && p.pt < Date.now()).length;
+  const tiles = [
+    ["Artikel", P.length.toLocaleString("de-DE"), "verkauft, noch nicht gutgeschrieben"],
+    ["Verkaufspreise", eur.format(sum(P, p => p.price)), "zusammen"],
+    ["Erwarteter Anteil", eur.format(sum(P, p => p.share)), P.length ? `≈ ${pct(sum(P, p => p.share) / sum(P, p => p.price))} vom Preis (Schätzung)` : ""],
+    ["Typische Wartezeit", D.lag_median != null ? `${D.lag_median} Tage` : "noch offen", D.lag_median != null ? `aus ${D.lag_n} abgerechneten Artikeln` : `braucht 3 Artikel mit Verlauf, bisher ${D.lag_n || 0}`],
+  ];
+  document.getElementById("p-kpis").innerHTML = tiles.map(([k, v, d]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
+  document.getElementById("p-note").textContent = "Sellpy nennt kein Zahlungsdatum. Es wird aus dem Verkaufsdatum plus der typischen Wartezeit bereits abgerechneter Artikel geschätzt. Das Verkaufsdatum ist die letzte Statusänderung des Artikels. Der Anteil ist ein Durchschnitt je Preisklasse. Filter gelten hier nicht.";
+  document.getElementById("p-list").innerHTML = P.map(p => {
+    const days = Math.max(0, Math.round((Date.now() - p.t) / DAY));
+    const pay = p.pt ? (p.pt < Date.now() ? `Zahlung eigentlich schon fällig, wartet ${days} Tage` : `Zahlung voraussichtlich ${dFmt.format(p.pt)}`) : "Zahlungsdatum noch nicht schätzbar";
+    return `<div class="bag"><div class="hd"><b>${esc(p.brand)} · ${esc(p.kind)}${p.size ? " · " + esc(p.size) : ""}${p.kids ? '<span class="pill">Kind</span>' : ""}</b></div>` +
+      `<dl><dt>Verkaufspreis</dt><dd>${eur.format(p.price)}</dd><dt>Anteil (geschätzt)</dt><dd>≈ ${eur.format(p.share)}</dd>` +
+      `<dt>Verkauft (ca.)</dt><dd>${dFmt.format(p.t)} · vor ${days} Tagen</dd><dt>Zahlung</dt><dd>${pay}</dd>` +
+      `<dt>Tasche vom</dt><dd>${p.bag_date ? dFmt.format(new Date(p.bag_date)) : "–"}</dd></dl></div>`;
+  }).join("") || `<div class="empty">Aktuell ist nichts verkauft und nicht abgerechnet.</div>`;
+}
+
+function renderBags(){
+  const ratio = shareRatio();
   const B = D.bags.filter(b => inPeriod(new Date(b.created_at))).map(b => {
     const fees = b.commission + b.ad_fee + b.unsold_fee, anteil = b.gross - b.commission - b.ad_fee, saldo = anteil - b.unsold_fee;
     const openN = b.open_prices.length, openP = sum(b.open_prices, p => p), pot = sum(b.open_prices, p => p * ratio(p));
@@ -625,6 +657,7 @@ function renderBags(){
 /* ---------- Render ---------- */
 function render(){
   if (state.tab === "bags") { renderBags(); return; }
+  if (state.tab === "pend") { renderPend(); return; }
   if (state.tab === "buys") { renderBuys(); return; }
   if (state.tab === "favs") { renderFavs(); return; }
   const S = filtered();
@@ -658,7 +691,7 @@ const built = new Date(D.built_at);
 document.getElementById("stand").textContent = `Stand ${dFmt.format(built)}, ${built.toLocaleTimeString("de-DE", {hour:"2-digit", minute:"2-digit"})} Uhr · ${D.sales.length} Verkäufe · ${(D.purchases || []).length} Käufe · ${D.favs.length} Favoriten`;
 document.getElementById("foot").textContent = "Quelle: dein Sellpy-Konto. Netto = Verkaufspreis minus Sellpy-Provision und Anzeigengebühr, so wie Sellpy es je Artikel bucht. Rücksendungen und Erstattungen bei Käufen kommen direkt von Sellpy. Favoriten: aktuelle Einträge deiner Favoritenliste mit den Angaben aus dem Sellpy-Shop; Artikel, die dort nicht mehr gelistet sind, haben keine Details mehr.";
 if (!D.items.some(i => i.kids) && !D.purchases.some(p => p.kids) && !D.favs.some(f => f.kids)) document.getElementById("f-kids").hidden = true;
-try { const t = localStorage.getItem("selldash-tab"); if (t === "buys" || t === "favs" || t === "bags") document.querySelector(`#f-tab [data-v="${t}"]`).click(); } catch (_) {}
+try { const t = localStorage.getItem("selldash-tab"); if (t === "buys" || t === "favs" || t === "bags" || t === "pend") document.querySelector(`#f-tab [data-v="${t}"]`).click(); } catch (_) {}
 render();
 let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(render, 150); });
 })();
