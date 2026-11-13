@@ -1,4 +1,4 @@
-name: Einrichtung – Zahlungsziel 7 (temporär)
+name: Einrichtung – Zahlungsziel 8 (temporär)
 on:
   push:
     paths: [.github/workflows/probe.yml]

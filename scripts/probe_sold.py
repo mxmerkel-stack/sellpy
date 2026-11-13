@@ -32,9 +32,9 @@ with sync_playwright() as p:
     nodes = [e["node"] for e in r["data"]["items"]["edges"]]
     out["sold"] = [{k: v for k, v in n.items() if k != "localizedMetadata"} | {"brand": (n.get("localizedMetadata") or {}).get("brand"), "type": (n.get("localizedMetadata") or {}).get("type")} for n in nodes]
     ids = [n["objectId"] for n in nodes]
-    r = s.q("""query($ids:[ID!]){ reservedBalanceTransactions(where:{item:{have:{objectId:{in:$ids}}}}, first: 100, order: createdAt_ASC){ count edges { node { objectId type createdAt settledAt delta { amount } item { objectId } } } } }""", {"ids": ids}, allow_errors=True)
+    r = s.q("""query($ids:[ID!]){ reservedBalanceTransactions(where:{item:{have:{objectId:{in:$ids}}}}, first: 100, order: createdAt_ASC){ count edges { node { objectId type createdAt settledAt delta item { objectId } } } } }""", {"ids": ids}, allow_errors=True)
     out["reserved_for_sold"] = json.dumps(r, ensure_ascii=False)[:6000]
-    r = s.q("""query($ids:[ID!]){ balanceTransactions(where:{item:{have:{objectId:{in:$ids}}}}, first: 100, order: createdAt_ASC){ count edges { node { objectId type createdAt delta { amount } item { objectId } } } } }""", {"ids": ids}, allow_errors=True)
+    r = s.q("""query($ids:[ID!]){ balanceTransactions(where:{item:{have:{objectId:{in:$ids}}}}, first: 100, order: createdAt_ASC){ count edges { node { objectId type createdAt delta item { objectId } } } } }""", {"ids": ids}, allow_errors=True)
     out["booked_for_sold"] = json.dumps(r, ensure_ascii=False)[:3000]
     b.close()
 Path("data").mkdir(exist_ok=True)
