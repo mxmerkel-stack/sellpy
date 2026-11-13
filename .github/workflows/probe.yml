@@ -1,4 +1,4 @@
-name: Einrichtung – Verkauft nicht abgerechnet (temporär)
+name: Einrichtung – Zahlungsdatum 2 (temporär)
 on:
   push:
     paths: [.github/workflows/probe.yml]
