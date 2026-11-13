@@ -61,6 +61,12 @@ th{color:var(--text-secondary);font-weight:600;cursor:pointer;user-select:none;p
 th[aria-sort]::after{content:" ▾";color:var(--text-muted)}
 th[aria-sort="ascending"]::after{content:" ▴"}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.bag{border-top:1px solid var(--line);padding:10px 0}.bag:first-child{border-top:0}
+.bag .hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.bag .hd b{font-size:14px}
+.bag .sal{font-weight:700;font-size:16px}.neg{color:#c0392b}.pos{color:#1e8449}
+.bag dl{display:grid;grid-template-columns:1fr auto;gap:2px 12px;margin:6px 0 0;font-size:12.5px}
+.bag dt{color:var(--text-secondary)}.bag dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.bag .open{margin-top:6px;padding:6px 8px;border-radius:8px;background:var(--series-1-soft);font-size:12.5px}
 .pill{display:inline-block;font-size:11px;padding:1px 6px;border-radius:999px;background:var(--series-1-soft);color:var(--text-primary);margin-left:4px}
 .events{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 @media(min-width:720px){.events{grid-template-columns:repeat(4,1fr)}}
@@ -96,6 +102,7 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
       <button data-v="sales" aria-pressed="true">Verkäufe</button>
       <button data-v="buys">Käufe</button>
       <button data-v="favs">Favoriten</button>
+      <button data-v="bags">Taschen</button>
     </div>
   </div>
   <div class="filters" role="group" aria-label="Filter" style="margin-top:-6px">
@@ -213,6 +220,11 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
       </tr></thead><tbody></tbody></table></div>
       <button class="more" id="wmore" hidden>Mehr anzeigen</button>
     </div>
+  </div>
+
+  <div id="tab-bags" hidden>
+    <section class="kpis" id="t-kpis"></section>
+    <div class="card"><h2>Saldo pro Tasche</h2><div class="note" id="t-note"></div><div id="t-list"></div></div>
   </div>
 
   <footer id="foot"></footer>
@@ -498,7 +510,7 @@ document.getElementById("f-tab").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   for (const x of e.currentTarget.children) x.setAttribute("aria-pressed", x === b);
   state.tab = b.dataset.v;
-  for (const t of ["sales", "buys", "favs"]) document.getElementById("tab-" + t).hidden = state.tab !== t;
+  for (const t of ["sales", "buys", "favs", "bags"]) document.getElementById("tab-" + t).hidden = state.tab !== t;
   try { localStorage.setItem("selldash-tab", state.tab); } catch (_) {}
   hideTip(); render();
 });
@@ -571,8 +583,48 @@ document.getElementById("f-wstat").addEventListener("click", e => {
 document.getElementById("wq").addEventListener("input", e => { wq = e.target.value; renderFavs(); });
 document.getElementById("wmore").addEventListener("click", () => { wLimit = 1e9; renderFavs(); });
 
+/* ---------- Taschen-Saldo ---------- */
+function renderBags(){
+  // Ø-Anteil je Preisklasse aus allen bisherigen Verkäufen (netto nach Provision und Anzeigengebühr)
+  const edges = [0, 3, 5, 8, 12, 20, 35, Infinity];
+  const rb = buckets(D.sales.filter(s => s.net != null), s => s.price, edges, "");
+  const ratio = p => { const i = edges.findIndex((lo, k) => p >= lo && p < edges[k + 1]); const r = rb[i]; return r && r.gross ? r.net / r.gross : 0; };
+  const B = D.bags.filter(b => inPeriod(new Date(b.created_at))).map(b => {
+    const fees = b.commission + b.ad_fee + b.unsold_fee, anteil = b.gross - b.commission - b.ad_fee, saldo = anteil - b.unsold_fee;
+    const openN = b.open_prices.length, openP = sum(b.open_prices, p => p), pot = sum(b.open_prices, p => p * ratio(p));
+    return {...b, fees, anteil, saldo, openN, openP, pot};
+  });
+  const T = k => sum(B, b => b[k]);
+  const tiles = [
+    ["Saldo gesamt", eur.format(T("saldo")), "Verkaufsanteil − Gebühren auf Unverkauftes"],
+    ["Verkaufspreise", eur.format(T("gross")), `${T("sold") - T("pending")} abgerechnete Artikel` + (T("pending") ? ` · ${T("pending")} noch nicht abgerechnet (${eur0.format(T("pending_gross"))})` : "")],
+    ["Gebühren gesamt", eur.format(T("fees")), `Provision ${eur0.format(T("commission"))} · Anzeige ${eur0.format(T("ad_fee") + T("unsold_fee"))}`],
+    ["Verkaufsanteil", eur.format(T("anteil")), T("gross") ? `${pct(T("anteil") / T("gross"))} vom Preis` : ""],
+    ["Noch offen", T("openN").toLocaleString("de-DE"), `Preise zusammen ${eur0.format(T("openP"))}`],
+    ["Möglicher Anteil", eur.format(T("pot")), T("openP") ? `Schätzung, ${pct(T("pot") / T("openP"))} der offenen Preise` : ""],
+    ["Saldo mit Potenzial", eur.format(T("saldo") + T("pot")), "falls alles Offene verkauft wird"],
+    ["Taschen im Minus", `${B.filter(b => b.saldo < 0).length} von ${B.length}`, "aktuell, ohne Potenzial"],
+  ];
+  document.getElementById("t-kpis").innerHTML = tiles.map(([k, v, d]) =>
+    `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
+  document.getElementById("t-note").textContent = `${B.length} Taschen im Zeitraum · Filter Alle/Erwachsene/Kinder gilt hier nicht · Potenzial = offene Preise × Ø-Anteil der bisherigen Verkäufe je Preisklasse`;
+  const cls = v => v < 0 ? "neg" : "pos";
+  document.getElementById("t-list").innerHTML = [...B].reverse().map(b =>
+    `<div class="bag"><div class="hd"><b>Tasche vom ${dFmt.format(new Date(b.created_at))}</b><span class="sal ${cls(b.saldo)}">${eur.format(b.saldo)}</span></div>` +
+    `<dl><dt>Artikel</dt><dd>${b.items} · davon ${b.sold} verkauft${b.gone ? `, ${b.gone} gespendet/zurück` : ""}</dd>` +
+    (b.pending ? `<dt>Verkauft, noch nicht abgerechnet</dt><dd>${b.pending} · ${eur.format(b.pending_gross)}</dd>` : "") +
+    `<dt>Verkaufspreise</dt><dd>${eur.format(b.gross)}</dd>` +
+    `<dt>Provision</dt><dd>−${eur.format(b.commission)}</dd>` +
+    `<dt>Anzeigengebühren (verkauft)</dt><dd>−${eur.format(b.ad_fee)}</dd>` +
+    `<dt>Verkaufsanteil</dt><dd>${eur.format(b.anteil)}${b.gross ? ` · ${pct(b.anteil / b.gross)}` : ""}</dd>` +
+    (b.unsold_fee ? `<dt>Gebühren auf Unverkauftes</dt><dd>−${eur.format(b.unsold_fee)}</dd>` : "") +
+    `<dt>Gebühren gesamt</dt><dd>${eur.format(b.fees)}</dd></dl>` +
+    (b.openN ? `<div class="open"><b>${b.openN} Artikel offen</b> · Preise ${eur.format(b.openP)} · möglicher Anteil ≈ ${eur.format(b.pot)}<br>Saldo bei Verkauf aller ≈ <b>${eur.format(b.saldo + b.pot)}</b></div>` : "") + `</div>`).join("") || `<div class="empty">Keine Taschen.</div>`;
+}
+
 /* ---------- Render ---------- */
 function render(){
+  if (state.tab === "bags") { renderBags(); return; }
   if (state.tab === "buys") { renderBuys(); return; }
   if (state.tab === "favs") { renderFavs(); return; }
   const S = filtered();
@@ -606,7 +658,7 @@ const built = new Date(D.built_at);
 document.getElementById("stand").textContent = `Stand ${dFmt.format(built)}, ${built.toLocaleTimeString("de-DE", {hour:"2-digit", minute:"2-digit"})} Uhr · ${D.sales.length} Verkäufe · ${(D.purchases || []).length} Käufe · ${D.favs.length} Favoriten`;
 document.getElementById("foot").textContent = "Quelle: dein Sellpy-Konto. Netto = Verkaufspreis minus Sellpy-Provision und Anzeigengebühr, so wie Sellpy es je Artikel bucht. Rücksendungen und Erstattungen bei Käufen kommen direkt von Sellpy. Favoriten: aktuelle Einträge deiner Favoritenliste mit den Angaben aus dem Sellpy-Shop; Artikel, die dort nicht mehr gelistet sind, haben keine Details mehr.";
 if (!D.items.some(i => i.kids) && !D.purchases.some(p => p.kids) && !D.favs.some(f => f.kids)) document.getElementById("f-kids").hidden = true;
-try { const t = localStorage.getItem("selldash-tab"); if (t === "buys" || t === "favs") document.querySelector(`#f-tab [data-v="${t}"]`).click(); } catch (_) {}
+try { const t = localStorage.getItem("selldash-tab"); if (t === "buys" || t === "favs" || t === "bags") document.querySelector(`#f-tab [data-v="${t}"]`).click(); } catch (_) {}
 render();
 let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(render, 150); });
 })();

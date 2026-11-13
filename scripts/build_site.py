@@ -138,13 +138,23 @@ def transform(raw):
     payouts = [{"at": t["createdAt"], "amount": -t["delta"]["amount"] / 100}
                for t in raw.get("balance", []) if t["type"] == "salePayout"]
     other_types = sorted({t["type"] for t in raw.get("balance", [])} - {"itemSold", "itemCommission", "itemAdFee", "salePayout"})
+    bag_of = {i["id"]: i["bag"] for i in items}
+    unsold_by_bag = defaultdict(float)
+    for t in raw.get("balance", []):
+        if t.get("item") and t["item"]["objectId"] not in sold_ids:
+            unsold_by_bag[bag_of.get(t["item"]["objectId"])] += -t["delta"]["amount"] / 100
     bags = []
     for b in raw.get("bags", []):
         bi = [i for i in items if i["bag"] == b["objectId"]]
         bs = [s for s in sales if s["bag"] == b["objectId"]]
         bags.append({"id": b["objectId"], "created_at": b.get("createdAt"), "items": len(bi), "sold": len(bs),
                      "online": sum(1 for i in bi if i["status"] == "Online"),
-                     "gross": sum(s["price"] for s in bs), "net": sum(s["net"] or 0 for s in bs)})
+                     "gross": sum(s["price"] for s in bs if s["net"] is not None), "net": sum(s["net"] or 0 for s in bs),
+                     "pending": sum(1 for s in bs if s["net"] is None), "pending_gross": sum(s["price"] for s in bs if s["net"] is None),
+                     "commission": sum(s["commission"] or 0 for s in bs), "ad_fee": sum(s["ad_fee"] or 0 for s in bs),
+                     "unsold_fee": unsold_by_bag.get(b["objectId"], 0.0),
+                     "gone": sum(1 for i in bi if i["status"] in ("Gespendet", "Zurückgeschickt", "Entfernt", "Abgelehnt", "Verloren")),
+                     "open_prices": [i["price"] for i in bi if i["status"] == "Online"]})
     purchases, orders = [], []
     # Rücksendungen: Sellpy führt sie als "itemClaims"; abgelehnte zählen nicht
     claim_type = {c["item"]["objectId"]: c.get("type") for c in raw.get("claims", [])
