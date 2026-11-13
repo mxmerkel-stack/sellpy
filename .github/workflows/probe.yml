@@ -1,4 +1,4 @@
-name: Einrichtung – Zahlungsdatum 4 (temporär)
+name: Einrichtung – Zahlungsdatum 5 (temporär)
 on:
   push:
     paths: [.github/workflows/probe.yml]
