@@ -31,18 +31,11 @@ with sync_playwright() as p:
     r = s.q("""query($u:ID!){ items(where:{itemStatus:{equalTo:"såld"}, user:{have:{objectId:{equalTo:$u}}}}, first: 50){ edges { node { objectId createdAt updatedAt paidAt putOnShelfAt bag { objectId } localizedMetadata(locale:"de") } } } }""", {"u": uid}, allow_errors=True)
     nodes = [e["node"] for e in r["data"]["items"]["edges"]]
     out["sold"] = [{k: v for k, v in n.items() if k != "localizedMetadata"} | {"brand": (n.get("localizedMetadata") or {}).get("brand"), "type": (n.get("localizedMetadata") or {}).get("type")} for n in nodes]
-    i0 = nodes[0]["objectId"]
-    for c in CANDS:
-        for sub in ("", " { objectId }", " { edges { node { objectId } } }"):
-            rr = s.q("query($i:ID!){ items(where:{objectId:{equalTo:$i}}, first:1){ edges { node { objectId %s%s } } } }" % (c, sub), {"i": i0}, allow_errors=True)
-            e = rr.get("errors")
-            if not e:
-                out["valid"][c + sub] = json.dumps(rr["data"]["items"]["edges"][0]["node"].get(c) if rr["data"]["items"]["edges"] else None)[:300]; break
-            m = e[0].get("message", "")
-            if "Cannot query field" in m and sub == "":
-                if "Did you mean" in m: out["bad"][c] = m[m.index("Did you mean"):][:120]
-                break
-    # alle Abfragen der Verkaufsübersicht-Seiten pro Artikel mitschneiden
+    ids = [n["objectId"] for n in nodes]
+    r = s.q("""query($ids:[ID!]){ reservedBalanceTransactions(where:{item:{have:{objectId:{in:$ids}}}}, first: 100, order: createdAt_ASC){ count edges { node { objectId type createdAt settledAt delta { amount } item { objectId } } } } }""", {"ids": ids}, allow_errors=True)
+    out["reserved_for_sold"] = json.dumps(r, ensure_ascii=False)[:6000]
+    r = s.q("""query($ids:[ID!]){ balanceTransactions(where:{item:{have:{objectId:{in:$ids}}}}, first: 100, order: createdAt_ASC){ count edges { node { objectId type createdAt delta { amount } item { objectId } } } } }""", {"ids": ids}, allow_errors=True)
+    out["booked_for_sold"] = json.dumps(r, ensure_ascii=False)[:3000]
     b.close()
 Path("data").mkdir(exist_ok=True)
 Path("data/probe.json").write_text(json.dumps(out, ensure_ascii=False))
