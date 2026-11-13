@@ -1,34 +1,52 @@
 #!/usr/bin/env python3
-"""Temporär: findet heraus, woher Sellpy Zahlungsdatum/Anteil verkaufter, noch nicht abgerechneter Artikel nimmt."""
+"""Temporär: sucht Felder für Verkaufs-/Zahlungsdatum bei Artikeln mit Status 'såld'."""
 import json, sys, re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fetch_sellpy as F
 
-IDS = ["TDZeqS1uyZ", "4LHc5mdFpr", "t3VRH31P7C", "ZTryuVK5vg", "1LOSQcerGH", "pjHYDLfUsa"]
-out = {"calls": [], "pages": {}}
+out = {"valid": {}, "invalid": {}, "suggest": []}
+CANDS = """sold soldAt soldDate dateSold saleDate orderedAt orderDate order shippedAt deliveredAt delivered paymentDate payoutDate payOutDate
+paidOutAt expectedPayoutDate expectedPaymentDate creditedAt sharePaidAt shareDate sellerShare share sellerPayment payment payments
+soldPrice salePrice sellingPrice price priceSold finalPrice sellerAmount sellerCredit credit commission fee adFee returnDeadline returnPeriodEnd
+returnableUntil returnUntil canReturn buyer sale orderItem orderItems payout sellerPayout balanceTransactions transactions
+statusChangedAt statusUpdatedAt updatedAt sellerItemStatusUpdatedAt itemStatusUpdatedAt reservedAt boughtAt purchasedAt purchaseDate
+availableAt payableAt payAt approvedAt packedAt processedAt dateProcessed""".split()
 with sync_playwright() as p:
     b = p.chromium.launch(headless=True)
     ctx = b.new_context(locale="de-DE", timezone_id="Europe/Berlin", viewport={"width": 1280, "height": 900},
                         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
-    page = ctx.new_page(); cur = {"u": ""}
-    def on_resp(r):
-        if "graphql" not in r.url: return
-        try: body = r.text(); req = r.request.post_data or ""
-        except Exception: return
-        if any(i in body for i in IDS) or re.search(r"payout|Payout|expected|sold", req):
-            out["calls"].append({"page": cur["u"], "req": req[:3000], "resp": body[:4000]})
-    page.on("response", on_resp)
+    page = ctx.new_page(); sess = {}
+    def on_req(r):
+        t = r.headers.get("x-parse-session-token")
+        if t: sess.update(token=t, app=r.headers.get("x-parse-application-id"))
+    page.on("request", on_req)
     F.login(page)
-    for path in ["/sales", "/my-sales", "/sales/sold", "/my-items", "/account/balance", "/balance"]:
-        cur["u"] = path
-        try:
-            page.goto(F.BASE + path, wait_until="domcontentloaded", timeout=40000); page.wait_for_timeout(6000)
-            out["pages"][path] = [page.url, page.title(), (page.inner_text("body") or "")[:900]]
-        except Exception as e:
-            out["pages"][path] = [str(e)[:100]]
+    page.goto(F.BASE + "/sales", wait_until="domcontentloaded", timeout=60000)
+    for _ in range(20):
+        if sess.get("token"): break
+        page.wait_for_timeout(500)
+    s = F.Sellpy(page, sess["token"], sess["app"])
+    uid = s.q("query { currentUser { objectId } }")["data"]["currentUser"]["objectId"]
+    r = s.q("""query($u:ID!){ items(where:{itemStatus:{equalTo:"såld"}, user:{have:{objectId:{equalTo:$u}}}}, first: 50){ edges { node { objectId createdAt paidAt putOnShelfAt } } } }""", {"u": uid}, allow_errors=True)
+    out["sald_raw"] = r
+    nodes = [e["node"] for e in ((r.get("data") or {}).get("items") or {}).get("edges", [])]
+    ids = [n["objectId"] for n in nodes]; out["ids"] = ids
+    if ids:
+        for c in CANDS:
+            for sub in ("", " { objectId }", " { amount currency }", " { edges { node { objectId } } }"):
+                rr = s.q("query($i:ID!){ items(where:{objectId:{equalTo:$i}}, first:1){ edges { node { objectId %s%s } } } }" % (c, sub), {"i": ids[0]}, allow_errors=True)
+                errs = rr.get("errors")
+                if not errs:
+                    node = rr["data"]["items"]["edges"][0]["node"] if rr["data"]["items"]["edges"] else None
+                    out["valid"][c + sub] = node.get(c) if node else None
+                    break
+                msg = errs[0].get("message", "")
+                if "Did you mean" in msg or "Cannot query field" in msg:
+                    if sub == "": out["invalid"][c] = msg[:200]
+                    break
     b.close()
 Path("data").mkdir(exist_ok=True)
 Path("data/probe.json").write_text(json.dumps(out, ensure_ascii=False))
-print("calls:", len(out["calls"]))
+print("valid:", list(out["valid"]))
