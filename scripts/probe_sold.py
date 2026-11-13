@@ -36,14 +36,13 @@ with sync_playwright() as p:
     out["sold"] = nodes
     bags = list(dict.fromkeys(n["bag"]["objectId"] for n in nodes if n.get("bag")))[:2]
     out["calls"].clear()
-    for bag in bags:
-        for path in (f"/sales/{bag}", f"/sales/{bag}/items", f"/sales/{bag}/sold"):
-            cur["u"] = path
-            try:
-                page.goto(F.BASE + path, wait_until="domcontentloaded", timeout=40000); page.wait_for_timeout(7000)
-                out["pages"][path] = [page.url, (page.inner_text("body") or "")[:2500]]
-            except Exception as e:
-                out["pages"][path] = [str(e)[:100]]
+    # Karten auf /sales anklicken und sehen, welche Adresse und Abfragen die Verkaufsübersicht nutzt
+    cur["u"] = "/sales"
+    page.goto(F.BASE + "/sales", wait_until="domcontentloaded", timeout=60000); page.wait_for_timeout(6000)
+    out["links"] = [[(a.inner_text() or "")[:60].replace("\n", " "), a.get_attribute("href")] for a in page.locator("a").all() if a.get_attribute("href") and "/sales" in (a.get_attribute("href") or "")][:30]
+    page.get_by_text("Verkaufsanteil").first.click(); page.wait_for_timeout(7000)
+    out["after_click"] = [page.url, (page.inner_text("body") or "")[:3000]]
+    out["calls"] = [c for c in out["calls"] if c["op"] and c["op"] not in ("getCustomerImpersonation", "getActiveAbTests", "currentUser", "getIntercomUserHash", "getEmailMarketingPermission", "syncCartReservations", "sellerFeaturesBlock", "getActiveNotificationsForUser")]
     b.close()
 Path("data").mkdir(exist_ok=True)
 Path("data/probe.json").write_text(json.dumps(out, ensure_ascii=False))
