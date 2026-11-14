@@ -27,7 +27,11 @@ body{margin:0}
 .viz-root{background:var(--bg);color:var(--text-primary);min-height:100vh;
   font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:16px 14px 40px}
 .wrap{max-width:980px;margin:0 auto}
+header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 header h1{font-size:22px;margin:0}
+#refresh{font:inherit;font-size:13px;border:1px solid var(--line);background:transparent;color:var(--text-primary,inherit);border-radius:9px;padding:7px 12px;cursor:pointer;white-space:nowrap}
+#refresh[disabled]{opacity:.6;cursor:default}
+#refmsg{font-size:12px;color:var(--text-secondary);margin:-4px 0 8px;min-height:0}
 header .sub{color:var(--text-secondary);font-size:13px;margin-top:2px}
 .filters{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 16px}
 .seg{display:inline-flex;flex-wrap:wrap;background:var(--surface-1);border:1px solid var(--line);border-radius:10px;padding:2px}
@@ -93,9 +97,11 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
 <div class="viz-root">
 <div class="wrap">
   <header>
-    <h1>SellDash</h1>
-    <div class="sub" id="stand"></div>
+    <div><h1>SellDash</h1>
+    <div class="sub" id="stand"></div></div>
+    <button id="refresh" type="button">↻ Aktualisieren</button>
   </header>
+  <div id="refmsg"></div>
 
   <div class="filters" role="group" aria-label="Bereich">
     <div class="seg" id="f-tab">
@@ -694,6 +700,51 @@ if (!D.items.some(i => i.kids) && !D.purchases.some(p => p.kids) && !D.favs.some
 try { const t = localStorage.getItem("selldash-tab"); if (t === "buys" || t === "favs" || t === "bags" || t === "pend") document.querySelector(`#f-tab [data-v="${t}"]`).click(); } catch (_) {}
 render();
 let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(render, 150); });
+
+// ---- Aktualisieren-Knopf: startet den GitHub-Workflow und lädt danach neu ----
+(() => {
+  const REPO = "mxmerkel-stack/sellpy", WF = "update.yml", KEY = "selldash_gh_token";
+  const btn = document.getElementById("refresh"), msg = document.getElementById("refmsg");
+  const get = () => { try { return localStorage.getItem(KEY) || ""; } catch (e) { return ""; } };
+  const put = v => { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch (e) {} };
+  const api = (path, opt = {}) => fetch("https://api.github.com/repos/" + REPO + path, Object.assign({
+    headers: { "Accept": "application/vnd.github+json", "Authorization": "Bearer " + get(), "X-GitHub-Api-Version": "2022-11-28" }
+  }, opt));
+  const say = t => { msg.textContent = t; };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  async function run() {
+    let tok = get();
+    if (!tok) {
+      tok = (prompt("Einmalig: GitHub-Token (fine-grained, nur Repo sellpy, Berechtigung „Actions: Read and write“) einfügen.\nAbbrechen = Seite nur neu laden.") || "").trim();
+      if (!tok) { location.reload(); return; }
+      put(tok);
+    }
+    btn.disabled = true; btn.textContent = "↻ Läuft …";
+    try {
+      const t0 = Date.now() - 60000;
+      const r = await api("/actions/workflows/" + WF + "/dispatches", { method: "POST", body: JSON.stringify({ ref: "main" }) });
+      if (r.status === 401 || r.status === 403 || r.status === 404) { put(""); throw new Error("Token ungültig oder ohne Berechtigung (Status " + r.status + "). Beim nächsten Klick neu eingeben."); }
+      if (!r.ok) throw new Error("GitHub antwortet mit Status " + r.status);
+      say("Aktualisierung gestartet – dauert ca. 3–5 Minuten, die Seite lädt danach selbst neu.");
+      for (let i = 0; i < 60; i++) {
+        await sleep(10000);
+        const q = await api("/actions/workflows/" + WF + "/runs?event=workflow_dispatch&per_page=5");
+        if (!q.ok) continue;
+        const run = ((await q.json()).workflow_runs || []).find(x => new Date(x.created_at).getTime() >= t0);
+        if (!run) continue;
+        say("Status: " + (run.status === "completed" ? "fertig" : run.status === "in_progress" ? "läuft" : "wartet") + " …");
+        if (run.status === "completed") {
+          if (run.conclusion !== "success") throw new Error("Aktualisierung fehlgeschlagen (" + run.conclusion + ").");
+          say("Fertig – lade neu …"); await sleep(5000); location.reload(); return;
+        }
+      }
+      throw new Error("Zeitüberschreitung – bitte später neu laden.");
+    } catch (e) {
+      say(e.message); btn.disabled = false; btn.textContent = "↻ Aktualisieren";
+    }
+  }
+  btn.addEventListener("click", run);
+})();
 })();
 </script>
 </body>
