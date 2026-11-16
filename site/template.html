@@ -716,7 +716,7 @@ let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(ren
     let tok = get();
     if (!tok) {
       tok = (prompt("Einmalig: GitHub-Token (fine-grained, nur Repo sellpy, Berechtigung „Actions: Read and write“) einfügen.\nAbbrechen = Seite nur neu laden.") || "").trim();
-      if (!tok) { location.reload(); return; }
+      if (!tok) { location.replace(location.pathname + "?r=" + Date.now()); return; }
       put(tok);
     }
     btn.disabled = true; btn.textContent = "↻ Läuft …";
@@ -735,7 +735,7 @@ let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(ren
         say("Status: " + (run.status === "completed" ? "fertig" : run.status === "in_progress" ? "läuft" : "wartet") + " …");
         if (run.status === "completed") {
           if (run.conclusion !== "success") throw new Error("Aktualisierung fehlgeschlagen (" + run.conclusion + ").");
-          say("Fertig – lade neu …"); await sleep(5000); location.reload(); return;
+          say("Fertig – lade die neue Version …"); await sleep(15000); try { await fetch(location.pathname, { cache: "reload" }); } catch (e) {} location.replace(location.pathname + "?r=" + Date.now()); return;
         }
       }
       throw new Error("Zeitüberschreitung – bitte später neu laden.");
