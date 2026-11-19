@@ -730,13 +730,13 @@ let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(ren
         await sleep(10000);
         const q = await api("/actions/workflows/" + WF + "/runs?event=workflow_dispatch&per_page=5");
         if (!q.ok) continue;
-        const run = ((await q.json()).workflow_runs || []).find(x => new Date(x.created_at).getTime() >= t0);
-        if (!run) continue;
-        say("Status: " + (run.status === "completed" ? "fertig" : run.status === "in_progress" ? "läuft" : "wartet") + " …");
-        if (run.status === "completed") {
-          if (run.conclusion !== "success") throw new Error("Aktualisierung fehlgeschlagen (" + run.conclusion + ").");
-          say("Fertig – lade die neue Version …"); await sleep(15000); try { await fetch(location.pathname, { cache: "reload" }); } catch (e) {} location.replace(location.pathname + "?r=" + Date.now()); return;
-        }
+        const runs = ((await q.json()).workflow_runs || []).filter(x => new Date(x.created_at).getTime() >= t0);
+        if (!runs.length) continue;
+        const ok = runs.find(x => x.status === "completed" && x.conclusion === "success");
+        const active = runs.find(x => x.status !== "completed");
+        if (ok && !active) { say("Fertig – lade die neue Version …"); await sleep(15000); try { await fetch(location.pathname, { cache: "reload" }); } catch (e) {} location.replace(location.pathname + "?r=" + Date.now()); return; }
+        if (active) { say("Status: " + (active.status === "in_progress" ? "läuft" : "wartet") + " …"); continue; }
+        if (runs.every(x => x.status === "completed" && x.conclusion !== "success" && x.conclusion !== "cancelled")) throw new Error("Aktualisierung fehlgeschlagen (" + runs[0].conclusion + ").");
       }
       throw new Error("Zeitüberschreitung – bitte später neu laden.");
     } catch (e) {
