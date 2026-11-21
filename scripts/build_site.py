@@ -30,11 +30,12 @@ CATEGORIES = [
     ("Hemden & Blusen", ["hemd", "bluse"]),
     ("Pullover & Strick", ["pullover", "pulli", "strick", "cardigan", "sweat", "hoodie", "kapuzen"]),
     ("Hosen & Jeans", ["hose", "jeans", "chino", "shorts", "leggings", "jeggings"]),
-    ("Shirts & Tops", ["shirt", "top", "polo", "longsleeve"]),
+    ("Shirts & Tops", ["shirt", "top", "polo", "longsleeve", "trainingsoberteil", "trainingsset"]),
+    ("Nachtwäsche", ["pyjama", "schlafanzug", "nachthemd"]),
     ("Kleider & Röcke", ["kleid", "rock"]),
-    ("Schuhe", ["schuh", "sneaker", "stiefel", "sandale", "boots", "pumps", "slipper", "schnürer", "espadrilles"]),
+    ("Schuhe", ["schuh", "sneaker", "stiefel", "sandale", "boots", "pumps", "slipper", "schnürer", "espadrilles", "ballerina"]),
     ("Accessoires", ["tasche", "gürtel", "mütze", "schal", "krawatte", "armband", "armbänder", "kette", "uhr", "cap",
-                     "hut", "handschuh", "fäustling", "sonnenbrille", "rucksack", "geldbörse", "haarband", "beutel", "helm"]),
+                     "hut", "kappe", "halswärmer", "multifunktionstuch", "handschuh", "fäustling", "sonnenbrille", "rucksack", "geldbörse", "haarband", "beutel", "helm"]),
     ("Beauty & Duft", ["parfum", "parfüm", "eau de", "creme", "kosmetik", "pflege", "duft"]),
     ("Baby & Kind", ["baby", "kinderwagen", "adapter", "babyschale", "spielzeug", "puzzle", "monitor"]),
     ("Sport & Freizeit", ["sport", "fahrrad", "klimmzug", "hantel", "yoga", "ball", "camping", "training"]),
@@ -134,7 +135,8 @@ def transform(raw):
 
     sold_ids = {s["id"] for s in sales}
     unsold_fees = [{"at": t["createdAt"], "amount": t["delta"]["amount"] / 100,
-                    "kids": next((i["kids"] for i in items if i["id"] == t["item"]["objectId"]), False)}
+                    "kids": next((i["kids"] for i in items if i["id"] == t["item"]["objectId"]), False),
+                    "category": next((i["category"] for i in items if i["id"] == t["item"]["objectId"]), None)}
                    for t in raw.get("balance", []) if t.get("item") and t["item"]["objectId"] not in sold_ids]
     payouts = [{"at": t["createdAt"], "amount": -t["delta"]["amount"] / 100}
                for t in raw.get("balance", []) if t["type"] == "salePayout"]
@@ -177,7 +179,7 @@ def transform(raw):
         sold = (track.get(it["objectId"]) or {}).get("sold") or it.get("updatedAt")
         d0 = day(sold)
         pay = (d0 + timedelta(days=lag_median)).isoformat() if d0 is not None and lag_median is not None else None
-        pending.append({"id": row["id"], "brand": row["brand"], "kind": row["kind"], "size": row["size"], "price": row["price"], "kids": row["kids"],
+        pending.append({"id": row["id"], "brand": row["brand"], "kind": row["kind"], "size": row["size"], "price": row["price"], "kids": row["kids"], "category": row["category"],
                         "bag": row["bag"], "bag_date": bag_dates.get(row["bag"]), "sold_at": sold, "pay_est": pay,
                         "pay_latest": (d0 + timedelta(days=PAY_DEADLINE_DAYS)).isoformat() if d0 is not None else None})
     purchases, orders = [], []
@@ -234,7 +236,8 @@ def transform(raw):
         meta = (h or {}).get("metadata") or {}
         raw_size = flat(meta.get("size") or (meta.get("sizes") or ""))
         kids = is_kids(meta, raw_size) if h else None
-        wish_events.append({"at": w.get("createdAt"), "cur": cur, "bought": bought.get(iid), "kids": kids})
+        wish_events.append({"at": w.get("createdAt"), "cur": cur, "bought": bought.get(iid), "kids": kids,
+                            "category": category(flat(meta.get("type"))) if h else None})
         if cur and iid:
             amount = ((h or {}).get("pricing") or {}).get("amount")
             kind = flat(meta.get("type")) or "Artikel"

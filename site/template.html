@@ -122,6 +122,7 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
       <button data-v="all" aria-pressed="true">Alle</button>
       <button data-v="adult">Erwachsene</button>
       <button data-v="kids">Kinder</button>
+      <button data-v="nowear">Keine Kleidung</button>
     </div>
   </div>
 
@@ -257,6 +258,8 @@ const sum = (a, f) => a.reduce((s, x) => s + (f(x) || 0), 0);
 const avg = (a, f) => { const v = a.map(f).filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
 const DAY = 864e5;
 
+const NONWEAR = new Set(["Beauty & Duft", "Baby & Kind", "Sport & Freizeit", "Haushalt & Technik", "Sonstiges", "Unbekannt"]);
+function demoOk(x){ const k = state.kids; return k === "all" || (k === "nowear" ? NONWEAR.has(x.category) : (k === "kids") === !!x.kids); }
 const state = {tab:"sales", range:"all", kids:"all", sortK:"sold_at", sortDir:-1, q:"", limit:25};
 D.sales.forEach(s => s.t = new Date(s.sold_at));
 
@@ -284,7 +287,7 @@ function periodEnd(){ const y = yearOf(); return y ? Math.min(Date.now(), +new D
 function filtered(){
   return D.sales.filter(s =>
     inPeriod(s.t) &&
-    (state.kids === "all" || (state.kids === "kids") === !!s.kids));
+    demoOk(s));
 }
 for (const id of ["f-range", "f-kids"]) {
   document.getElementById(id).addEventListener("click", e => {
@@ -320,7 +323,7 @@ function kpis(S){
 }
 const pct = x => (x * 100).toLocaleString("de-DE", {maximumFractionDigits:0}) + " %";
 function median(a){ if (!a.length) return 0; const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; }
-const kidsOk = i => state.kids === "all" || (state.kids === "kids") === !!i.kids;
+const kidsOk = demoOk;
 
 /* ---------- Wochen-Balken (SVG) ---------- */
 function monday(d){ const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
@@ -531,7 +534,7 @@ document.getElementById("f-tab").addEventListener("click", e => {
 D.wish = D.wish || []; D.favs = D.favs || [];
 D.wish.forEach(w => w.t = new Date(w.at)); D.favs.forEach(f => f.t = new Date(f.at));
 let wLimit = 25, wq = "", wStat = "all";
-const wishKidsOk = w => state.kids === "all" || (w.kids != null && w.kids === (state.kids === "kids"));
+const wishKidsOk = w => state.kids === "all" || (state.kids === "nowear" ? NONWEAR.has(w.category) : (w.kids != null && w.kids === (state.kids === "kids")));
 function renderFavs(){
   const W = D.wish.filter(w => inPeriod(w.t) && wishKidsOk(w));
   const F = D.favs.filter(f => inPeriod(f.t) && kidsOk(f));
