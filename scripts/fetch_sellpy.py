@@ -221,7 +221,8 @@ def main():
                     {"id": o["objectId"]}, allow_errors=True)
             o["lineItems"] = (r.get("data") or {}).get("fetchLineItemsByOrder") or []
         # Favoriten: Einträge kommen per GraphQL, Artikeldetails (Marke, Preis …) aus der Suche, die auch die Favoritenseite nutzt
-        wish, fav_items, fav_avail = [], [], []
+        wish, fav_items, fav_avail, own_items = [], [], [], []
+        own_ids = [it["objectId"] for it in items if it.get("itemStatus") == "utlagd"]
         try:
             wish = s.pages("""query W($uid: ID!, $first: Int, $after: String) {
               itemWishlists(where: {user: {have: {objectId: {equalTo: $uid}}}}, first: $first, after: $after, order: updatedAt_DESC) {
@@ -230,7 +231,12 @@ def main():
               } }""", "itemWishlists", {"uid": uid})
             cur_ids = [w["item"]["objectId"] for w in wish if w.get("selected") and w.get("active") and w.get("item")]
             print(f"Favoriten-Einträge: {len(wish)}, davon aktiv: {len(cur_ids)}")
-            fav_items, fav_avail = fetch_fav_items(page, cur_ids)
+            all_hits, all_avail = fetch_fav_items(page, list(dict.fromkeys(cur_ids + own_ids)))
+            cs, os_ = set(cur_ids), set(own_ids)
+            fav_items = [h for h in all_hits if h["objectId"] in cs]
+            fav_avail = [i for i in all_avail if i in cs]
+            own_items = [h for h in all_hits if h["objectId"] in os_]
+            print(f"Eigene Online-Artikel mit Details: {len(own_items)} von {len(own_ids)}, mit Likes: {sum(1 for h in own_items if (h.get('fav_count') or 0) > 0)}")
         except Exception as e:  # noqa: BLE001
             print(f"Favoriten übersprungen ({type(e).__name__}: {str(e)[:120]})")
         credit_now = s.q('query { currentUserCredit(currency: "EUR") }', allow_errors=True).get("data", {}).get("currentUserCredit")
@@ -242,7 +248,7 @@ def main():
 
     snapshot = {"fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "items": items, "balance": balance,
                 "bags": bags, "credits": credits, "orders": orders, "claims": claims, "credit_now": credit_now, "item_fields": fields,
-                "wishlist": wish, "fav_items": fav_items, "fav_available": fav_avail}
+                "wishlist": wish, "fav_items": fav_items, "fav_available": fav_avail, "own_items": own_items}
 
     # Verlauf: Artikel und Buchungen werden zusammengeführt, damit nichts verloren geht
     hist_path = DATA / "history.enc"
@@ -257,6 +263,16 @@ def main():
         if it.get("itemStatus") == "såld" and it["objectId"] not in track:
             track[it["objectId"]] = {"sold": it.get("updatedAt") or snapshot["fetched_at"]}
     snapshot["sold_track"] = track
+    # Preisverlauf eigener Online-Artikel merken (Sellpy nennt keine Preishistorie): nur Änderungen speichern
+    ptrack = {k: list(v) for k, v in (hist.get("price_track") or {}).items()}
+    for h in own_items:
+        amt = (h.get("pricing") or {}).get("amount")
+        if amt is None:
+            continue
+        log = ptrack.setdefault(h["objectId"], [])
+        if not log or log[-1][1] != amt:
+            log.append([snapshot["fetched_at"], amt])
+    snapshot["price_track"] = ptrack
     for key in ("items", "balance", "bags", "credits", "orders", "claims", "wishlist", "fav_items"):
         merged = {x["objectId"]: x for x in hist.get(key, [])}
         merged.update({x["objectId"]: x for x in snapshot[key]})

@@ -250,11 +250,31 @@ def transform(raw):
                          "demography": flat(meta.get("demography")), "kids": bool(kids), "price": amount, "dropped": bool((h or {}).get("price_drop")),
                          "likes": (h or {}).get("fav_count"), "reserved": bool((h or {}).get("reserved")), "p2p": bool((h or {}).get("p2p")),
                          "listed_at": ((h or {}).get("sale_started") or 0) / 1000 or None, "bought": bought.get(iid)})
+    # Eigene Online-Artikel mit Likes (Likes kommen aus der Sellpy-Suche; Preisverlauf aus unseren eigenen Abrufen)
+    by_id = {r["id"]: r for r in items}
+    ptrack = raw.get("price_track") or {}
+    likes = []
+    for h in raw.get("own_items") or []:
+        n = h.get("fav_count") or 0
+        row = by_id.get(h["objectId"])
+        if n <= 0 or not row or row["status"] != "Online":
+            continue
+        amt = (h.get("pricing") or {}).get("amount")
+        old = ((h.get("price_drop") or {}).get("oldPrice") or {}).get("amount")
+        log = ptrack.get(h["objectId"]) or []
+        changes = [{"at": b[0], "from": a[1], "to": b[1]} for a, b in zip(log, log[1:])]
+        online = h.get("sale_started")
+        likes.append({"id": h["objectId"], "brand": row["brand"], "kind": row["kind"], "size": row["size"], "kids": row["kids"],
+                      "category": row["category"], "likes": n, "price": amt if amt is not None else row["price"],
+                      "start_old": old / 100 if old else None, "reserved": bool(h.get("reserved")), "last_chance": bool(h.get("last_chance")),
+                      "online_at": datetime.fromtimestamp(online / 1000, timezone.utc).isoformat() if online else None,
+                      "changes": changes, "tracked_since": log[0][0] if log else None})
+    likes.sort(key=lambda r: (-r["likes"], r["online_at"] or ""))
     credits = [{"at": c["createdAt"], "type": c["type"], "amount": c["delta"]["amount"] / 100} for c in raw.get("credits", [])]
     return {"items": items, "sales": sorted(sales, key=lambda s: s["sold_at"] or ""), "bags": sorted(bags, key=lambda b: b["created_at"] or ""),
             "payouts": payouts, "unsold_fees": unsold_fees, "credits": credits, "credit_now": raw.get("credit_now"), "other_tx_types": other_types, "purchases": sorted(purchases, key=lambda r: r["at"] or ""),
             "orders": sorted(orders, key=lambda r: r["at"] or ""),
-            "pending": sorted(pending, key=lambda r: r["sold_at"] or ""), "lag_median": lag_median, "lag_n": len(lags),
+            "pending": sorted(pending, key=lambda r: r["sold_at"] or ""), "lag_median": lag_median, "lag_n": len(lags), "likes": likes,
             "wish": sorted(wish_events, key=lambda e: e["at"] or ""), "favs": sorted(favs, key=lambda e: e["at"] or ""),
             "fetched_at": raw.get("fetched_at")}
 
