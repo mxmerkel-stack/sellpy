@@ -111,6 +111,7 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
       <button data-v="bags">Taschen</button>
       <button data-v="pend">Nicht abgerechnet</button>
       <button data-v="likes">Likes</button>
+      <button data-v="quota">Quote</button>
     </div>
   </div>
   <div class="filters" role="group" aria-label="Filter" style="margin-top:-6px">
@@ -244,6 +245,15 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
   <div id="tab-likes" hidden>
     <section class="kpis" id="l-kpis"></section>
     <div class="card"><h2>Online-Artikel mit Likes</h2><div class="note" id="l-note"></div><div id="l-list"></div></div>
+    <div class="card"><h2>Ladenhüter (ohne Likes)</h2><div class="note" id="l-dead-note"></div><div id="l-dead"></div></div>
+  </div>
+
+  <div id="tab-quota" hidden>
+    <section class="kpis" id="q-kpis"></section>
+    <div class="card"><h2>Verkaufsquote nach Kategorie</h2><div class="note">verkauft von allen eingestellten Artikeln (auch noch offenen, die zählen als nicht verkauft); junge Artikel drücken die Quote</div><div id="c-qcat"></div></div>
+    <div class="card"><h2>Verkaufsquote nach Preis</h2><div class="note">Preis bei Sellpy</div><div id="c-qprice"></div></div>
+    <div class="card"><h2>Verkaufsquote nach Marke</h2><div class="note">Marken mit mindestens 4 eingestellten Artikeln</div><div id="c-qbrand"></div></div>
+    <div class="card"><h2>Lohnt sich die Tasche?</h2><div class="note" id="q-note"></div><div id="q-bags"></div></div>
   </div>
 
   <footer id="foot"></footer>
@@ -531,7 +541,7 @@ document.getElementById("f-tab").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   for (const x of e.currentTarget.children) x.setAttribute("aria-pressed", x === b);
   state.tab = b.dataset.v;
-  for (const t of ["sales", "buys", "favs", "bags", "pend", "likes"]) document.getElementById("tab-" + t).hidden = state.tab !== t;
+  for (const t of ["sales", "buys", "favs", "bags", "pend", "likes", "quota"]) document.getElementById("tab-" + t).hidden = state.tab !== t;
   try { localStorage.setItem("selldash-tab", state.tab); } catch (_) {}
   hideTip(); render();
 });
@@ -612,7 +622,8 @@ function shareRatio(){
   return p => { const i = edges.findIndex((lo, k) => p >= lo && p < edges[k + 1]); const r = rb[i]; return r && r.gross ? r.net / r.gross : 0; };
 }
 function renderLikes(){
-  const L = (D.likes || []).filter(kidsOk).map(l => ({...l, on: l.online_at ? new Date(l.online_at) : null}));
+  const ALL = (D.likes || []).filter(kidsOk).map(l => ({...l, on: l.online_at ? new Date(l.online_at) : null}));
+  const L = ALL.filter(l => l.likes > 0).map(l => ({...l, on: l.online_at ? new Date(l.online_at) : null}));
   const days = l => l.on ? Math.max(0, Math.round((Date.now() - l.on) / DAY)) : null;
   const tot = sum(L, l => l.likes), withDays = L.filter(l => l.on);
   const tiles = [
@@ -634,6 +645,48 @@ function renderLikes(){
       `<dt>Letzte Senkung</dt><dd>${chg}</dd>` +
       `<dt>Nächste Senkung</dt><dd>${l.last_chance ? "letzte Chance (Sellpy)" : "Termin nicht bekannt"}</dd></dl></div>`;
   }).join("") || `<div class="empty">Noch keine Likes auf deine Online-Artikel (oder Daten noch nicht abgerufen).</div>`;
+  const Z = ALL.filter(l => l.likes === 0 && l.on).sort((a, b) => a.on - b.on);
+  document.getElementById("l-dead-note").textContent = `${Z.length} Online-Artikel ohne Like, am längsten online zuerst` + (Z.length ? ` · zusammen ${eur.format(sum(Z, l => l.price))} · Ø ${Math.round(sum(Z, days) / Z.length)} Tage online` : "") + (Z.length > 40 ? " · die 40 ältesten" : "");
+  document.getElementById("l-dead").innerHTML = Z.slice(0, 40).map(l => {
+    const dr = l.start_old && l.drop_at ? `${eur.format(l.start_old)} → ${eur.format(l.price)} am ${dFmt.format(new Date(l.drop_at))}` : "keine";
+    return `<div class="bag"><div class="hd"><b>${esc(l.brand)} · ${esc(l.kind)}${l.size ? " · " + esc(l.size) : ""}${l.kids ? '<span class="pill">Kind</span>' : ""}</b></div>` +
+      `<dl><dt>Online seit</dt><dd>${dFmt.format(l.on)} · ${days(l)} Tage</dd><dt>Preis</dt><dd>${eur.format(l.price)}</dd><dt>Letzte Senkung</dt><dd>${dr}</dd></dl></div>`;
+  }).join("") || `<div class="empty">Keine Ladenhüter.</div>`;
+}
+
+function renderQuota(){
+  const I = D.items.filter(i => i.outcome && kidsOk(i) && inPeriod(new Date(i.created_at)));
+  const sold = I.filter(i => i.outcome === "sold"), exp = I.filter(i => i.outcome === "expired"), on = I.filter(i => i.outcome === "online");
+  const done = sold.length + exp.length + on.length, q = done ? sold.length / done : null;
+  const ratio = shareRatio();
+  const tiles = [
+    ["Verkaufsquote bisher", q == null ? "–" : pct(q), `${sold.length} von ${done} eingestellten Artikeln`],
+    ["Verkauft", sold.length.toLocaleString("de-DE"), eur0.format(sum(sold, i => i.price)) + " Verkaufspreise"],
+    ["Abgelaufen", exp.length.toLocaleString("de-DE"), "eingestellt, nicht verkauft, nicht mehr online"],
+    ["Noch online", on.length.toLocaleString("de-DE"), "noch nicht entschieden, zählen als nicht verkauft"],
+  ];
+  document.getElementById("q-kpis").innerHTML = tiles.map(([k, v, d]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
+  const grp = (rows, key, min) => { const m = new Map(); for (const i of rows) { const k = key(i); if (!k) continue; const r = m.get(k) || {label:k, n:0, s:0}; r.n++; if (i.outcome === "sold") r.s++; m.set(k, r); }
+    return [...m.values()].filter(r => r.n >= min).map(r => ({...r, v:r.s / r.n})).sort((a, b) => b.v - a.v || b.n - a.n); };
+  const f = r => `${pct(r.v)} · ${r.s}/${r.n}`, tip = r => `<b>${esc(r.label)}</b><br>${r.s} verkauft von ${r.n} eingestellten · ${pct(r.v)}`;
+  hbars("c-qcat", grp(I, i => i.category, 3), f, tip);
+  hbars("c-qbrand", grp(I, i => i.brand, 4).slice(0, 12), f, tip);
+  const edges = [0, 3, 5, 8, 12, 20, 35, Infinity];
+  const pr = edges.slice(0, -1).map((lo, k) => { const rows = I.filter(i => i.price >= lo && i.price < edges[k + 1]);
+    const s = rows.filter(i => i.outcome === "sold").length; return {label: edges[k + 1] === Infinity ? `ab ${lo} €` : `${lo}–${edges[k + 1]} €`, n: rows.length, s, v: rows.length ? s / rows.length : 0}; }).filter(r => r.n);
+  hbars("c-qprice", pr, f, tip);
+  const B = D.bags.filter(b => inPeriod(new Date(b.created_at))).map(b => {
+    const anteil = b.gross - b.commission - b.ad_fee, saldo = anteil - b.unsold_fee, pot = sum(b.open_prices, p => p * ratio(p));
+    const its = D.items.filter(i => i.bag === b.id && i.outcome), s = its.filter(i => i.outcome === "sold").length, e = its.length - s;
+    const col = saldo >= 0 ? "green" : (saldo + pot >= 0 ? "yellow" : "red");
+    return {...b, saldo, pot, s, e, q: its.length ? s / its.length : null, col, total: b.sold + b.online + b.gone};
+  }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const cnt = c => B.filter(b => b.col === c).length;
+  document.getElementById("q-note").textContent = `Grün: Saldo schon im Plus · Gelb: aktuell im Minus, mit dem Potenzial der offenen Artikel im Plus · Rot: auch mit Potenzial im Minus. Jetzt: ${cnt("green")} grün, ${cnt("yellow")} gelb, ${cnt("red")} rot. Saldo wie im Tab Taschen; Potenzial = offene Preise × Ø-Anteil je Preisklasse.`;
+  const dot = {green:"#2e9d55", yellow:"#e0a100", red:"#d0443e"};
+  document.getElementById("q-bags").innerHTML = B.map(b => `<div class="bag"><div class="hd"><b><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dot[b.col]};margin-right:8px"></span>Tasche vom ${dFmt.format(new Date(b.created_at))}</b></div>` +
+    `<dl><dt>Saldo</dt><dd>${eur.format(b.saldo)}</dd><dt>Mit Potenzial</dt><dd>${eur.format(b.saldo + b.pot)}</dd>` +
+    `<dt>Verkauft</dt><dd>${b.s} von ${b.s + b.e} eingestellten${b.q != null ? " · " + pct(b.q) : ""}</dd><dt>Noch online</dt><dd>${b.online}</dd></dl></div>`).join("") || `<div class="empty">Keine Taschen.</div>`;
 }
 
 function renderPend(){
@@ -699,6 +752,7 @@ function render(){
   if (state.tab === "bags") { renderBags(); return; }
   if (state.tab === "pend") { renderPend(); return; }
   if (state.tab === "likes") { renderLikes(); return; }
+  if (state.tab === "quota") { renderQuota(); return; }
   if (state.tab === "buys") { renderBuys(); return; }
   if (state.tab === "favs") { renderFavs(); return; }
   const S = filtered();
@@ -732,7 +786,7 @@ const built = new Date(D.built_at);
 document.getElementById("stand").textContent = `Stand ${dFmt.format(built)}, ${built.toLocaleTimeString("de-DE", {hour:"2-digit", minute:"2-digit"})} Uhr · ${D.sales.length} Verkäufe · ${(D.purchases || []).length} Käufe · ${D.favs.length} Favoriten`;
 document.getElementById("foot").textContent = "Quelle: dein Sellpy-Konto. Netto = Verkaufspreis minus Sellpy-Provision und Anzeigengebühr, so wie Sellpy es je Artikel bucht. Rücksendungen und Erstattungen bei Käufen kommen direkt von Sellpy. Favoriten: aktuelle Einträge deiner Favoritenliste mit den Angaben aus dem Sellpy-Shop; Artikel, die dort nicht mehr gelistet sind, haben keine Details mehr.";
 if (!D.items.some(i => i.kids) && !D.purchases.some(p => p.kids) && !D.favs.some(f => f.kids)) document.getElementById("f-kids").hidden = true;
-try { const t = localStorage.getItem("selldash-tab"); if (t === "buys" || t === "favs" || t === "bags" || t === "pend" || t === "likes") document.querySelector(`#f-tab [data-v="${t}"]`).click(); } catch (_) {}
+try { const t = localStorage.getItem("selldash-tab"); if (t === "buys" || t === "favs" || t === "bags" || t === "pend" || t === "likes" || t === "quota") document.querySelector(`#f-tab [data-v="${t}"]`).click(); } catch (_) {}
 render();
 let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(render, 150); });
 

@@ -135,6 +135,9 @@ def transform(raw):
                           "bag_date": bag_dates.get(row["bag"])})
 
     sold_ids = {s["id"] for s in sales}
+    fee_ids = {t["item"]["objectId"] for t in raw.get("balance", []) if t.get("item")} - sold_ids
+    for r in items:  # Ergebnis je Artikel: verkauft / online (offen) / abgelaufen (eingestellt, Gebühr, nicht verkauft)
+        r["outcome"] = "sold" if r["id"] in sold_ids else ("online" if r["status"] == "Online" else ("expired" if r["id"] in fee_ids else None))
     unsold_fees = [{"at": t["createdAt"], "amount": t["delta"]["amount"] / 100,
                     "kids": next((i["kids"] for i in items if i["id"] == t["item"]["objectId"]), False),
                     "category": next((i["category"] for i in items if i["id"] == t["item"]["objectId"]), None)}
@@ -257,7 +260,7 @@ def transform(raw):
     for h in raw.get("own_items") or []:
         n = h.get("fav_count") or 0
         row = by_id.get(h["objectId"])
-        if n <= 0 or not row or row["status"] != "Online":
+        if not row or row["status"] != "Online":
             continue
         amt = (h.get("pricing") or {}).get("amount")
         old = ((h.get("price_drop") or {}).get("oldPrice") or {}).get("amount")
