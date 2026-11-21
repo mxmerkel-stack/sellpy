@@ -50,8 +50,11 @@ with sync_playwright() as p:
     ids = [e["node"]["objectId"] for e in ((items.get("data") or {}).get("items") or {}).get("edges", [])]
     out["ids"] = ids
     # Schema-Abfrage zu Item
-    intro = s.q('query { __type(name: "Item") { fields { name } } }', allow_errors=True)
-    out["intro"] = [f["name"] for f in (((intro.get("data") or {}).get("__type") or {}).get("fields") or [])]
+    try:
+        intro = s.q('query { __type(name: "Item") { fields { name } } }', allow_errors=True)
+        out["intro"] = [f["name"] for f in (((intro.get("data") or {}).get("__type") or {}).get("fields") or [])]
+    except Exception as e:
+        out["intro"] = ["fehler " + str(e)[:80]]
     if alg.get("index") and ids:
         flt = "(" + " OR ".join(f"objectID:{x}" for x in ids) + ")"
         r = page.request.post(alg["url"], headers={"content-type": "application/json"}, timeout=60000,
