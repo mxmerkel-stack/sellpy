@@ -676,7 +676,7 @@ function renderQuota(){
     const s = rows.filter(i => i.outcome === "sold").length; return {label: edges[k + 1] === Infinity ? `ab ${lo} €` : `${lo}–${edges[k + 1]} €`, n: rows.length, s, v: rows.length ? s / rows.length : 0}; }).filter(r => r.n);
   hbars("c-qprice", pr, f, tip);
   const B = D.bags.filter(b => inPeriod(new Date(b.created_at))).map(b => {
-    const anteil = b.gross - b.commission - b.ad_fee, saldo = anteil - b.unsold_fee, pot = sum(b.open_prices, p => p * ratio(p));
+    const anteil = b.gross - b.commission - b.ad_fee, saldo = anteil - b.unsold_fee - b.reserved_fee, pot = sum(b.open_prices, p => p * ratio(p) + D.ad_fee_unit);
     const its = D.items.filter(i => i.bag === b.id && i.outcome), s = its.filter(i => i.outcome === "sold").length, e = its.length - s;
     const col = saldo >= 0 ? "green" : (saldo + pot >= 0 ? "yellow" : "red");
     return {...b, saldo, pot, s, e, q: its.length ? s / its.length : null, col, total: b.sold + b.online + b.gone};
@@ -715,15 +715,15 @@ function renderPend(){
 function renderBags(){
   const ratio = shareRatio();
   const B = D.bags.filter(b => inPeriod(new Date(b.created_at))).map(b => {
-    const fees = b.commission + b.ad_fee + b.unsold_fee, anteil = b.gross - b.commission - b.ad_fee, saldo = anteil - b.unsold_fee;
-    const openN = b.open_prices.length, openP = sum(b.open_prices, p => p), pot = sum(b.open_prices, p => p * ratio(p));
+    const fees = b.commission + b.ad_fee + b.unsold_fee + b.reserved_fee, anteil = b.gross - b.commission - b.ad_fee, saldo = anteil - b.unsold_fee - b.reserved_fee;
+    const openN = b.open_prices.length, openP = sum(b.open_prices, p => p), pot = sum(b.open_prices, p => p * ratio(p) + D.ad_fee_unit);
     return {...b, fees, anteil, saldo, openN, openP, pot};
   });
   const T = k => sum(B, b => b[k]);
   const tiles = [
-    ["Saldo gesamt", eur.format(T("saldo")), "Verkaufsanteil − Gebühren auf Unverkauftes"],
+    ["Saldo gesamt", eur.format(T("saldo")), "Verkaufsanteil − alle Anzeigengebühren (wie in der App)"],
     ["Verkaufspreise", eur.format(T("gross")), `${T("sold") - T("pending")} abgerechnete Artikel` + (T("pending") ? ` · ${T("pending")} noch nicht abgerechnet (${eur0.format(T("pending_gross"))})` : "")],
-    ["Gebühren gesamt", eur.format(T("fees")), `Provision ${eur0.format(T("commission"))} · Anzeige ${eur0.format(T("ad_fee") + T("unsold_fee"))}`],
+    ["Gebühren gesamt", eur.format(T("fees")), `Provision ${eur0.format(T("commission"))} · Anzeige ${eur0.format(T("ad_fee") + T("unsold_fee") + T("reserved_fee"))}`],
     ["Verkaufsanteil", eur.format(T("anteil")), T("gross") ? `${pct(T("anteil") / T("gross"))} vom Preis` : ""],
     ["Noch offen", T("openN").toLocaleString("de-DE"), `Preise zusammen ${eur0.format(T("openP"))}`],
     ["Möglicher Anteil", eur.format(T("pot")), T("openP") ? `Schätzung, ${pct(T("pot") / T("openP"))} der offenen Preise` : ""],
@@ -740,10 +740,12 @@ function renderBags(){
     (b.pending ? `<dt>Verkauft, noch nicht abgerechnet</dt><dd>${b.pending} · ${eur.format(b.pending_gross)}</dd>` : "") +
     `<dt>Verkaufspreise</dt><dd>${eur.format(b.gross)}</dd>` +
     `<dt>Provision</dt><dd>−${eur.format(b.commission)}</dd>` +
-    `<dt>Anzeigengebühren (verkauft)</dt><dd>−${eur.format(b.ad_fee)}</dd>` +
-    `<dt>Verkaufsanteil</dt><dd>${eur.format(b.anteil)}${b.gross ? ` · ${pct(b.anteil / b.gross)}` : ""}</dd>` +
-    (b.unsold_fee ? `<dt>Gebühren auf Unverkauftes</dt><dd>−${eur.format(b.unsold_fee)}</dd>` : "") +
-    `<dt>Gebühren gesamt</dt><dd>${eur.format(b.fees)}</dd></dl>` +
+    `<dt>Verkaufsanteil (wie App)</dt><dd>${eur.format(b.gross - b.commission)}${b.gross ? ` · ${pct((b.gross - b.commission) / b.gross)}` : ""}</dd>` +
+    `<dt>Anzeigengebühren gesamt</dt><dd>−${eur.format(b.ad_fee + b.unsold_fee + b.reserved_fee)}</dd>` +
+    `<dt>· davon verkaufte Artikel</dt><dd>−${eur.format(b.ad_fee)}</dd>` +
+    (b.unsold_fee ? `<dt>· davon nicht verkauft</dt><dd>−${eur.format(b.unsold_fee)}</dd>` : "") +
+    (b.reserved_fee ? `<dt>· davon reserviert (offene Artikel)</dt><dd>−${eur.format(b.reserved_fee)}</dd>` : "") +
+    `<dt>Gebühren inkl. Provision</dt><dd>${eur.format(b.fees)}</dd></dl>` +
     (b.openN ? `<div class="open"><b>${b.openN} Artikel offen</b> · Preise ${eur.format(b.openP)} · möglicher Anteil ≈ ${eur.format(b.pot)}<br>Saldo bei Verkauf aller ≈ <b>${eur.format(b.saldo + b.pot)}</b></div>` : "") + `</div>`).join("") || `<div class="empty">Keine Taschen.</div>`;
 }
 

@@ -150,6 +150,9 @@ def transform(raw):
     for t in raw.get("balance", []):
         if t.get("item") and t["item"]["objectId"] not in sold_ids:
             unsold_by_bag[bag_of.get(t["item"]["objectId"])] += -t["delta"]["amount"] / 100
+    # Sellpy zieht die Anzeigengebühr für Artikel, die noch online sind, schon als "reserviert" ab (App: Verkaufsanteil -> Anzeigengebühren)
+    fee_amounts = [round(-t["delta"]["amount"] / 100, 2) for t in raw.get("balance", []) if t["type"] == "itemAdFee"]
+    ad_fee_unit = max(set(fee_amounts), key=fee_amounts.count) if fee_amounts else 1.2
     bags = []
     for b in raw.get("bags", []):
         bi = [i for i in items if i["bag"] == b["objectId"]]
@@ -160,6 +163,7 @@ def transform(raw):
                      "pending": sum(1 for s in bs if s["net"] is None), "pending_gross": sum(s["price"] for s in bs if s["net"] is None),
                      "commission": sum(s["commission"] or 0 for s in bs), "ad_fee": sum(s["ad_fee"] or 0 for s in bs),
                      "unsold_fee": unsold_by_bag.get(b["objectId"], 0.0),
+                     "reserved_fee": round(ad_fee_unit * sum(1 for i in bi if i["status"] == "Online"), 2),
                      "gone": sum(1 for i in bi if i["status"] in ("Gespendet", "Zurückgeschickt", "Entfernt", "Abgelehnt", "Verloren")),
                      "open_prices": [i["price"] for i in bi if i["status"] == "Online"]})
     # Verkauft, aber noch nicht abgerechnet (Status "såld"): Sellpy nennt kein Zahlungsdatum,
@@ -279,7 +283,7 @@ def transform(raw):
     return {"items": items, "sales": sorted(sales, key=lambda s: s["sold_at"] or ""), "bags": sorted(bags, key=lambda b: b["created_at"] or ""),
             "payouts": payouts, "unsold_fees": unsold_fees, "credits": credits, "credit_now": raw.get("credit_now"), "other_tx_types": other_types, "purchases": sorted(purchases, key=lambda r: r["at"] or ""),
             "orders": sorted(orders, key=lambda r: r["at"] or ""),
-            "pending": sorted(pending, key=lambda r: r["sold_at"] or ""), "lag_median": lag_median, "lag_n": len(lags), "likes": likes,
+            "pending": sorted(pending, key=lambda r: r["sold_at"] or ""), "ad_fee_unit": ad_fee_unit, "lag_median": lag_median, "lag_n": len(lags), "likes": likes,
             "wish": sorted(wish_events, key=lambda e: e["at"] or ""), "favs": sorted(favs, key=lambda e: e["at"] or ""),
             "fetched_at": raw.get("fetched_at")}
 
