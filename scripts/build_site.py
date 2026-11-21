@@ -26,7 +26,7 @@ PAY_DEADLINE_DAYS = 14  # Sellpy-App: "Anteil spätestens am ..." = 14 Tage nach
 KIDS_SIZES = set(range(62, 177, 6))
 CATEGORIES = [
     ("Bodys & Strampler", ["body", "strampler", "overall", "jumpsuit", "spucktuch", "lätzchen", "tragetuch"]),
-    ("Jacken & Mäntel", ["jacke", "mantel", "weste", "parka", "blazer", "sakko", "anorak", "fleece", "anzug"]),
+    ("Jacken & Mäntel", ["jacke", "mantel", "weste", "parka", "blazer", "sakko", "anorak", "fleece", "anzug", "gilet", "bolero", "poncho", "cape", "bodywarmer", "daunen", "steppjacke"]),
     ("Hemden & Blusen", ["hemd", "bluse"]),
     ("Pullover & Strick", ["pullover", "pulli", "strick", "cardigan", "sweat", "hoodie", "kapuzen"]),
     ("Hosen & Jeans", ["hose", "jeans", "chino", "shorts", "leggings", "jeggings"]),
@@ -36,6 +36,7 @@ CATEGORIES = [
     ("Schuhe", ["schuh", "sneaker", "stiefel", "sandale", "boots", "pumps", "slipper", "schnürer", "espadrilles", "ballerina"]),
     ("Accessoires", ["tasche", "gürtel", "mütze", "schal", "krawatte", "armband", "armbänder", "kette", "uhr", "cap",
                      "hut", "kappe", "halswärmer", "multifunktionstuch", "handschuh", "fäustling", "sonnenbrille", "rucksack", "geldbörse", "haarband", "beutel", "helm"]),
+    ("Bücher & Spielzeug", ["buch", "actionfigur", "figur", "hilfsmittel", "nicht verkaufbar", "hörspiel", "spiel"]),
     ("Beauty & Duft", ["parfum", "parfüm", "eau de", "creme", "kosmetik", "pflege", "duft"]),
     ("Baby & Kind", ["baby", "kinderwagen", "adapter", "babyschale", "spielzeug", "puzzle", "monitor"]),
     ("Sport & Freizeit", ["sport", "fahrrad", "klimmzug", "hantel", "yoga", "ball", "camping", "training"]),

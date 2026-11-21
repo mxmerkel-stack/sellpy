@@ -258,7 +258,7 @@ const sum = (a, f) => a.reduce((s, x) => s + (f(x) || 0), 0);
 const avg = (a, f) => { const v = a.map(f).filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
 const DAY = 864e5;
 
-const NONWEAR = new Set(["Beauty & Duft", "Baby & Kind", "Sport & Freizeit", "Haushalt & Technik", "Sonstiges", "Unbekannt"]);
+const NONWEAR = new Set(["Beauty & Duft", "Baby & Kind", "Sport & Freizeit", "Haushalt & Technik", "Bücher & Spielzeug", "Unbekannt"]);
 function demoOk(x){ const k = state.kids; return k === "all" || (k === "nowear" ? NONWEAR.has(x.category) : (k === "kids") === !!x.kids); }
 const state = {tab:"sales", range:"all", kids:"all", sortK:"sold_at", sortDir:-1, q:"", limit:25};
 D.sales.forEach(s => s.t = new Date(s.sold_at));
