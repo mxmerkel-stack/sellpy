@@ -25,7 +25,7 @@ with sync_playwright() as p:
     page = ctx.new_page(); session = {}; alg = {}; cur = {"u": ""}
     def on_req(r):
         t = r.headers.get("x-parse-session-token")
-        if t: session.update(token=t, app=r.headers.get("x-parse-application-id"))
+        if t and not session: session.update(token=t, app=r.headers.get("x-parse-application-id"))
         if "algolia.net/1/indexes" in r.url and not alg and "favorites" in cur["u"]:
             alg.update(url=r.url, index=(json.loads(r.post_data or "{}").get("requests") or [{}])[0].get("indexName"))
     def on_resp(r):
