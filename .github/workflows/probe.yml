@@ -1,4 +1,4 @@
-name: Einrichtung – Likes und Preissenkung 1 (temporär)
+name: Einrichtung – Likes und Preissenkung 2 (temporär)
 on:
   push:
     paths: [.github/workflows/probe.yml]

@@ -26,7 +26,7 @@ with sync_playwright() as p:
     def on_req(r):
         t = r.headers.get("x-parse-session-token")
         if t: session.update(token=t, app=r.headers.get("x-parse-application-id"))
-        if "algolia.net/1/indexes" in r.url and not alg:
+        if "algolia.net/1/indexes" in r.url and not alg and "favorites" in cur["u"]:
             alg.update(url=r.url, index=(json.loads(r.post_data or "{}").get("requests") or [{}])[0].get("indexName"))
     def on_resp(r):
         if "graphql" not in r.url: return
@@ -56,9 +56,12 @@ with sync_playwright() as p:
         flt = "(" + " OR ".join(f"objectID:{x}" for x in ids) + ")"
         r = page.request.post(alg["url"], headers={"content-type": "application/json"}, timeout=60000,
                               data=json.dumps({"requests": [{"indexName": alg["index"], "hitsPerPage": 20, "filters": flt}]}))
-        for h in r.json()["results"][0]["hits"]:
-            h.pop("images", None); h.pop("_highlightResult", None)
-            out["alg"].append(h)
+        try:
+            for h in r.json()["results"][0]["hits"]:
+                h.pop("images", None); h.pop("_highlightResult", None)
+                out["alg"].append(h)
+        except Exception:
+            out["keys"]["alg_error"] = f"{r.status} {r.text()[:300]} {alg}"
     for i in ids[:2]:
         cur["u"] = "item"
         try:
