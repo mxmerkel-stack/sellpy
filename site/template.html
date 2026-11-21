@@ -625,8 +625,8 @@ function renderLikes(){
   document.getElementById("l-note").textContent = "Sortiert nach Likes (viele zuerst), nur Artikel mit mindestens einem Like. Einen Termin für die nächste Preissenkung nennt Sellpy nicht (der Verkaufsplan ist intern); Preisänderungen werden ab jetzt bei jedem Abruf mitgeschrieben und hier angezeigt. Filter Alle/Erwachsene/Kinder/Keine Kleidung gilt, Zeitraum nicht.";
   document.getElementById("l-list").innerHTML = L.map(l => {
     const last = l.changes.length ? l.changes[l.changes.length - 1] : null;
-    const chg = last ? `${eur.format(last.from / 1)} → ${eur.format(last.to / 1)} am ${dFmt.format(new Date(last.at))}`
-      : (l.start_old ? `zum Start gesenkt: ${eur.format(l.start_old)} → ${eur.format(l.price)}` : "bisher keine beobachtet");
+    const chg = last ? `${eur.format(last.from)} → ${eur.format(last.to)} am ${dFmt.format(new Date(last.at))}`
+      : (l.start_old && l.drop_at ? `${eur.format(l.start_old)} → ${eur.format(l.price)} am ${dFmt.format(new Date(l.drop_at))}` : "bisher keine");
     return `<div class="bag"><div class="hd"><b>${esc(l.brand)} · ${esc(l.kind)}${l.size ? " · " + esc(l.size) : ""}${l.kids ? '<span class="pill">Kind</span>' : ""}</b></div>` +
       `<dl><dt>Likes</dt><dd>${l.likes}${l.reserved ? " · reserviert" : ""}</dd>` +
       `<dt>Online seit</dt><dd>${l.on ? dFmt.format(l.on) + " · " + days(l) + " Tage" : "unbekannt"}</dd>` +

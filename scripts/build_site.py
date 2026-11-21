@@ -263,11 +263,13 @@ def transform(raw):
         old = ((h.get("price_drop") or {}).get("oldPrice") or {}).get("amount")
         log = ptrack.get(h["objectId"]) or []
         changes = [{"at": b[0], "from": a[1], "to": b[1]} for a, b in zip(log, log[1:])]
-        online = h.get("sale_started")
+        online = h.get("first_offered") or h.get("sale_started")
+        restart = h.get("sale_started")
         likes.append({"id": h["objectId"], "brand": row["brand"], "kind": row["kind"], "size": row["size"], "kids": row["kids"],
                       "category": row["category"], "likes": n, "price": amt if amt is not None else row["price"],
                       "start_old": old / 100 if old else None, "reserved": bool(h.get("reserved")), "last_chance": bool(h.get("last_chance")),
                       "online_at": datetime.fromtimestamp(online / 1000, timezone.utc).isoformat() if online else None,
+                      "drop_at": datetime.fromtimestamp(restart / 1000, timezone.utc).isoformat() if (restart and old) else None,
                       "changes": changes, "tracked_since": log[0][0] if log else None})
     likes.sort(key=lambda r: (-r["likes"], r["online_at"] or ""))
     credits = [{"at": c["createdAt"], "type": c["type"], "amount": c["delta"]["amount"] / 100} for c in raw.get("credits", [])]

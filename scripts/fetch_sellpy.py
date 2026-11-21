@@ -66,7 +66,7 @@ def trim_hit(h):
     """Nur die Felder behalten, die das Dashboard braucht (keine Bilder, Schlagworte, Rankingwerte)."""
     meta = {k: v for k, v in (h.get("metadata") or {}).items() if k != "defects"}
     cats = h.get("categories") or {}
-    return {"objectId": h.get("objectID"), "created": h.get("createdAt"), "sale_started": h.get("saleStartedAt"), "metadata": meta,
+    return {"objectId": h.get("objectID"), "created": h.get("createdAt"), "sale_started": h.get("saleStartedAt"), "first_offered": h.get("firstOfferedAt_DE") or h.get("firstOfferedAt_AT"), "metadata": meta,
             "cat": (cats.get("lvl2") or cats.get("lvl1") or cats.get("lvl0") or [""])[0], "pricing": h.get("pricing"),
             "price_drop": h.get("priceDrop_DE"), "fav_count": h.get("favouriteCount"), "p2p": h.get("p2p"),
             "reserved": h.get("isReserved"), "for_sale": h.get("isForSale"), "last_chance": h.get("lastChance"),
