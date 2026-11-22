@@ -32,6 +32,10 @@ header h1{font-size:22px;margin:0}
 #refresh{font:inherit;font-size:13px;border:1px solid var(--line);background:transparent;color:var(--text-primary,inherit);border-radius:9px;padding:7px 12px;cursor:pointer;white-space:nowrap}
 #refresh[disabled]{opacity:.6;cursor:default}
 #refmsg{font-size:13px;color:var(--text-secondary);margin:-4px 0 8px;min-height:0}
+.inhalt{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+.inhalt summary{cursor:pointer;font-size:13px;padding:6px 0;color:var(--text-secondary)}
+.irow{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
+.irow-s{font-size:11px;color:var(--text-secondary)}.irow-r{text-align:right;white-space:nowrap}
 #stale{background:#4a3b00;color:#ffd666;border-radius:9px;padding:8px 10px;font-size:13px;margin:4px 0 10px}
 #refmsg.err{color:#ff8a80;font-size:14px;border:1px solid #ff8a80;border-radius:9px;padding:8px 10px;margin:4px 0 10px}
 header .sub{color:var(--text-secondary);font-size:13px;margin-top:2px}
@@ -736,7 +740,7 @@ function renderQuota(){
   const dot = {green:"#2e9d55", yellow:"#e0a100", red:"#d0443e"};
   document.getElementById("q-bags").innerHTML = B.map(b => `<div class="bag"><div class="hd"><b><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dot[b.col]};margin-right:8px"></span>Tasche vom ${dFmt.format(new Date(b.created_at))}</b></div>` +
     `<dl><dt>Saldo</dt><dd>${eur.format(b.saldo)}</dd><dt>Mit Potenzial</dt><dd>${eur.format(b.saldo + b.pot)}</dd>` +
-    `<dt>Verkauft</dt><dd>${b.s} von ${b.s + b.e} eingestellten${b.q != null ? " · " + pct(b.q) : ""}</dd><dt>Noch online</dt><dd>${b.online}</dd></dl></div>`).join("") || `<div class="empty">Keine Taschen.</div>`;
+    `<dt>Verkauft</dt><dd>${b.s} von ${b.s + b.e} eingestellten${b.q != null ? " · " + pct(b.q) : ""}</dd><dt>Noch online</dt><dd>${b.online}</dd></dl>${bagContent(b.id)}</div>`).join("") || `<div class="empty">Keine Taschen.</div>`;
 }
 
 function renderPend(){
@@ -762,6 +766,20 @@ function renderPend(){
   }).join("") || `<div class="empty">Aktuell ist nichts verkauft und nicht abgerechnet.</div>`;
 }
 
+const ST_ORDER = ["Verkauft", "Online", "In Bearbeitung", "Gespendet", "Zurückgeschickt", "Entfernt"];
+function bagContent(bagId){
+  const its = D.items.filter(i => i.bag === bagId), soldBy = new Map(D.sales.map(x => [x.id, x]));
+  const pend = new Set((D.pending || []).map(p => p.id));
+  const lk = new Map((D.likes || []).map(l => [l.id, l.likes]));
+  its.sort((a, b) => (ST_ORDER.indexOf(a.status) - ST_ORDER.indexOf(b.status)) || b.price - a.price);
+  const cnt = {}; its.forEach(i => cnt[i.status] = (cnt[i.status] || 0) + 1);
+  const head = ST_ORDER.filter(k => cnt[k]).map(k => `${cnt[k]} ${k.toLowerCase()}`).join(" · ");
+  const row = i => { const x = soldBy.get(i.id);
+    const right = i.status === "Verkauft" ? (pend.has(i.id) ? `${eur.format(i.price)} · noch nicht abgerechnet` : `${eur.format(i.price)} → netto ${eur.format(x ? x.net : 0)}`)
+      : i.status === "Online" ? `${eur.format(i.price)}${lk.get(i.id) ? " · " + lk.get(i.id) + " ♥" : ""}` : (i.price ? eur.format(i.price) : "");
+    return `<div class="irow"><div><b>${esc(i.brand)}</b> · ${esc(i.kind)}${i.size ? " · " + esc(i.size) : ""}<div class="irow-s">${esc(i.status)}${i.kids ? " · Kind" : ""}</div></div><div class="irow-r">${right}</div></div>`; };
+  return `<details class="inhalt"><summary>Inhalt anzeigen (${its.length} Artikel)</summary><div class="note">${head}</div>${its.map(row).join("")}</details>`;
+}
 function renderBags(){
   const ratio = shareRatio();
   const B = D.bags.filter(b => inPeriod(new Date(b.created_at))).map(b => {
@@ -797,7 +815,7 @@ function renderBags(){
     (b.unsold_fee ? `<dt>· davon nicht verkauft</dt><dd>−${eur.format(b.unsold_fee)}</dd>` : "") +
     (b.reserved_fee ? `<dt>· davon reserviert (offene Artikel)</dt><dd>−${eur.format(b.reserved_fee)}</dd>` : "") +
     `<dt>Gebühren inkl. Provision</dt><dd>${eur.format(b.fees)}</dd></dl>` +
-    (b.openN ? `<div class="open"><b>${b.openN} Artikel offen</b> · Preise ${eur.format(b.openP)} · möglicher Anteil ≈ ${eur.format(b.pot)}<br>Saldo bei Verkauf aller ≈ <b>${eur.format(b.saldo + b.pot)}</b></div>` : "") + `</div>`).join("") || `<div class="empty">Keine Taschen.</div>`;
+    bagContent(b.id) + (b.openN ? `<div class="open"><b>${b.openN} Artikel offen</b> · Preise ${eur.format(b.openP)} · möglicher Anteil ≈ ${eur.format(b.pot)}<br>Saldo bei Verkauf aller ≈ <b>${eur.format(b.saldo + b.pot)}</b></div>` : "") + `</div>`).join("") || `<div class="empty">Keine Taschen.</div>`;
 }
 
 /* ---------- Render ---------- */
