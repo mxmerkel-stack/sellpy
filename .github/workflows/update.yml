@@ -53,6 +53,7 @@ jobs:
           SELLPY_USER: ${{ secrets.SELLPY_USER }}
           SELLPY_PASS: ${{ secrets.SELLPY_PASS }}
           PAGE_PASSWORD: ${{ secrets.PAGE_PASSWORD }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python scripts/fetch_sellpy.py
 
       - name: Verlauf speichern (verschlüsselt)
@@ -64,6 +65,7 @@ jobs:
       - name: Seite bauen und verschlüsseln
         env:
           PAGE_PASSWORD: ${{ secrets.PAGE_PASSWORD }}
+          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
         run: |
           python scripts/build_site.py
           python scripts/encrypt_page.py

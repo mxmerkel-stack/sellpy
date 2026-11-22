@@ -124,6 +124,52 @@ def login(page):
     page.wait_for_url(lambda u: "/login" not in u, timeout=40000)
 
 
+def _name(it):
+    m = it.get("localizedMetadata") or {}
+    def f(v):
+        if isinstance(v, dict):
+            v = v.get("value") or v.get("de") or next(iter(v.values()), "")
+        return str(v or "").strip()
+    return " ".join(x for x in (f(m.get("brand")), f(m.get("type"))) if x) or "Artikel"
+
+
+def notify_events(hist, snapshot, own_items):
+    """Push-Nachrichten (ntfy.sh) bei Verkauf, Auszahlung und vielen Likes. Nur wenn NTFY_TOPIC gesetzt ist."""
+    liked = dict(hist.get("like_notified") or {})
+    for h in own_items:
+        if (h.get("fav_count") or 0) >= 5:
+            liked.setdefault(h["objectId"], h["fav_count"])
+    snapshot["like_notified"] = liked
+    if not hist:  # erster Lauf: nichts melden
+        return
+    old_status = {x["objectId"]: x.get("itemStatus") for x in hist.get("items", [])}
+    msgs = []
+    for it in snapshot["items"]:
+        if it.get("itemStatus") in ("såld", "betald") and old_status.get(it["objectId"]) not in ("såld", "betald"):
+            price = ((it.get("value") or {}).get("amount") or 0) / 100
+            msgs.append(("Artikel verkauft", f"{_name(it)} für {price:.2f} €".replace(".", ",")))
+    old_tx = {x["objectId"] for x in hist.get("balance", [])}
+    for t in snapshot["balance"]:
+        if t["objectId"] not in old_tx and t.get("type") == "salePayout":
+            msgs.append(("Auszahlung", f"{-t['delta']['amount'] / 100:.2f} € ausgezahlt".replace(".", ",")))
+    old_likes = hist.get("like_notified") or {}
+    for h in own_items:
+        if (h.get("fav_count") or 0) >= 5 and h["objectId"] not in old_likes:
+            msgs.append(("Viele Likes", f"{h['fav_count']} Likes auf einen deiner Artikel"))
+    topic = os.environ.get("NTFY_TOPIC", "").strip()
+    print(f"Ereignisse: {len(msgs)}" + ("" if topic else " (kein NTFY_TOPIC gesetzt, nichts gesendet)"))
+    if not topic or not msgs:
+        return
+    import urllib.request
+    for title, body in msgs[:10]:
+        req = urllib.request.Request("https://ntfy.sh/", data=json.dumps({"topic": topic, "title": title, "message": body, "tags": ["shopping_bags"]}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(req, timeout=20).read()
+        except Exception as e:  # Push ist nur Zugabe
+            print("Push fehlgeschlagen:", str(e)[:80])
+
+
 def main():
     pw_page = os.environ.get("PAGE_PASSWORD", "")
     if not USER or not PASS:
@@ -273,6 +319,7 @@ def main():
         if not log or log[-1][1] != amt:
             log.append([snapshot["fetched_at"], amt])
     snapshot["price_track"] = ptrack
+    notify_events(hist, snapshot, own_items)
     for key in ("items", "balance", "bags", "credits", "orders", "claims", "wishlist", "fav_items"):
         merged = {x["objectId"]: x for x in hist.get(key, [])}
         merged.update({x["objectId"]: x for x in snapshot[key]})

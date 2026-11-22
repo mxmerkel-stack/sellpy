@@ -32,6 +32,7 @@ header h1{font-size:22px;margin:0}
 #refresh{font:inherit;font-size:13px;border:1px solid var(--line);background:transparent;color:var(--text-primary,inherit);border-radius:9px;padding:7px 12px;cursor:pointer;white-space:nowrap}
 #refresh[disabled]{opacity:.6;cursor:default}
 #refmsg{font-size:13px;color:var(--text-secondary);margin:-4px 0 8px;min-height:0}
+#stale{background:#4a3b00;color:#ffd666;border-radius:9px;padding:8px 10px;font-size:13px;margin:4px 0 10px}
 #refmsg.err{color:#ff8a80;font-size:14px;border:1px solid #ff8a80;border-radius:9px;padding:8px 10px;margin:4px 0 10px}
 header .sub{color:var(--text-secondary);font-size:13px;margin-top:2px}
 .filters{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 16px}
@@ -102,7 +103,15 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
     <div class="sub" id="stand"></div></div>
     <button id="refresh" type="button">↻ Aktualisieren</button>
   </header>
+  <div id="stale" hidden></div>
   <div id="refmsg"></div>
+  <div id="tokpanel" class="card" hidden>
+    <h2>GitHub-Token einmalig hinterlegen</h2>
+    <div class="note">Der Knopf startet die Aktualisierung bei GitHub. Dafür braucht er einen Token: github.com → Settings → Developer settings → Fine-grained tokens → Generate. Nur Repo <b>sellpy</b>, Berechtigung <b>Actions: Read and write</b>. Der Token bleibt nur in diesem Browser gespeichert.</div>
+    <input id="tokin" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="github_pat_…" style="width:100%;box-sizing:border-box;font:inherit;padding:10px;border-radius:9px;border:1px solid var(--line);background:transparent;color:inherit;margin:8px 0">
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button id="toksave" type="button" style="font:inherit;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:transparent;color:inherit">Speichern &amp; aktualisieren</button>
+    <button id="tokcancel" type="button" style="font:inherit;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:transparent;color:inherit">Abbrechen</button></div>
+  </div>
 
   <div class="filters" role="group" aria-label="Bereich">
     <div class="seg" id="f-tab">
@@ -113,6 +122,7 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
       <button data-v="pend">Nicht abgerechnet</button>
       <button data-v="likes">Likes</button>
       <button data-v="quota">Quote</button>
+      <button data-v="months">Monate</button>
     </div>
   </div>
   <div class="filters" role="group" aria-label="Filter" style="margin-top:-6px">
@@ -235,7 +245,7 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
 
   <div id="tab-bags" hidden>
     <section class="kpis" id="t-kpis"></section>
-    <div class="card"><h2>Saldo pro Tasche</h2><div class="note" id="t-note"></div><div id="t-list"></div></div>
+    <div class="card"><h2>Saldo pro Tasche</h2><div class="note" id="t-note"></div><div class="note" id="t-check"></div><div id="t-list"></div></div>
   </div>
 
   <div id="tab-pend" hidden>
@@ -255,6 +265,12 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
     <div class="card"><h2>Verkaufsquote nach Preis</h2><div class="note">Preis bei Sellpy</div><div id="c-qprice"></div></div>
     <div class="card"><h2>Verkaufsquote nach Marke</h2><div class="note">Marken mit mindestens 4 eingestellten Artikeln</div><div id="c-qbrand"></div></div>
     <div class="card"><h2>Lohnt sich die Tasche?</h2><div class="note" id="q-note"></div><div id="q-bags"></div></div>
+  </div>
+
+  <div id="tab-months" hidden>
+    <section class="kpis" id="m-kpis"></section>
+    <div class="card"><h2>Netto aus Verkäufen pro Monat</h2><div class="note">Netto nach Provision und Anzeigengebühr, nach Verkaufsdatum</div><div id="m-chart"></div></div>
+    <div class="card"><h2>Monatsübersicht</h2><div class="note" id="m-note"></div><div id="m-table"></div></div>
   </div>
 
   <footer id="foot"></footer>
@@ -542,7 +558,7 @@ document.getElementById("f-tab").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   for (const x of e.currentTarget.children) x.setAttribute("aria-pressed", x === b);
   state.tab = b.dataset.v;
-  for (const t of ["sales", "buys", "favs", "bags", "pend", "likes", "quota"]) document.getElementById("tab-" + t).hidden = state.tab !== t;
+  for (const t of ["sales", "buys", "favs", "bags", "pend", "likes", "quota", "months"]) document.getElementById("tab-" + t).hidden = state.tab !== t;
   try { localStorage.setItem("selldash-tab", state.tab); } catch (_) {}
   hideTip(); render();
 });
@@ -622,6 +638,16 @@ function shareRatio(){
   const rb = buckets(D.sales.filter(s => s.net != null), s => s.price, edges, "");
   return p => { const i = edges.findIndex((lo, k) => p >= lo && p < edges[k + 1]); const r = rb[i]; return r && r.gross ? r.net / r.gross : 0; };
 }
+function recommend(l, days){
+  // Schätzung aus eigenen Verkaufsquoten, kein Sellpy-Wert
+  const likes = l.likes || 0;
+  let f = 0;
+  if (likes === 0 && days >= 90) f = 0.8; else if (likes > 0 && days >= 45) f = 0.85; else return "";
+  const target = Math.max(3, Math.round(l.price * f * 2) / 2);
+  if (target > l.price - 0.49) return "";
+  const why = likes ? `${likes} Like${likes > 1 ? "s" : ""}, aber seit ${days} Tagen online` : `seit ${days} Tagen online ohne Like`;
+  return `Preis auf ≈ ${eur.format(target)} testen (${why}; Schätzung)`;
+}
 function renderLikes(){
   const ALL = (D.likes || []).filter(kidsOk).map(l => ({...l, on: l.online_at ? new Date(l.online_at) : null}));
   const L = ALL.filter(l => l.likes > 0).map(l => ({...l, on: l.online_at ? new Date(l.online_at) : null}));
@@ -644,15 +670,38 @@ function renderLikes(){
       `<dt>Online seit</dt><dd>${l.on ? dFmt.format(l.on) + " · " + days(l) + " Tage" : "unbekannt"}</dd>` +
       `<dt>Aktueller Preis</dt><dd>${eur.format(l.price)}</dd>` +
       `<dt>Letzte Senkung</dt><dd>${chg}</dd>` +
-      `<dt>Nächste Senkung</dt><dd>${l.last_chance ? "letzte Chance (Sellpy)" : "Termin nicht bekannt"}</dd></dl></div>`;
+      `<dt>Nächste Senkung</dt><dd>${l.last_chance ? "letzte Chance (Sellpy)" : "Termin nicht bekannt"}</dd>` +
+      (recommend(l, days(l) || 0) ? `<dt>Empfehlung</dt><dd>${recommend(l, days(l) || 0)}</dd>` : "") + `</dl></div>`;
   }).join("") || `<div class="empty">Noch keine Likes auf deine Online-Artikel (oder Daten noch nicht abgerufen).</div>`;
   const Z = ALL.filter(l => l.likes === 0 && l.on).sort((a, b) => a.on - b.on);
   document.getElementById("l-dead-note").textContent = `${Z.length} Online-Artikel ohne Like, am längsten online zuerst` + (Z.length ? ` · zusammen ${eur.format(sum(Z, l => l.price))} · Ø ${Math.round(sum(Z, days) / Z.length)} Tage online` : "") + (Z.length > 40 ? " · die 40 ältesten" : "");
   document.getElementById("l-dead").innerHTML = Z.slice(0, 40).map(l => {
     const dr = l.start_old && l.drop_at ? `${eur.format(l.start_old)} → ${eur.format(l.price)} am ${dFmt.format(new Date(l.drop_at))}` : "keine";
     return `<div class="bag"><div class="hd"><b>${esc(l.brand)} · ${esc(l.kind)}${l.size ? " · " + esc(l.size) : ""}${l.kids ? '<span class="pill">Kind</span>' : ""}</b></div>` +
-      `<dl><dt>Online seit</dt><dd>${dFmt.format(l.on)} · ${days(l)} Tage</dd><dt>Preis</dt><dd>${eur.format(l.price)}</dd><dt>Letzte Senkung</dt><dd>${dr}</dd></dl></div>`;
+      `<dl><dt>Online seit</dt><dd>${dFmt.format(l.on)} · ${days(l)} Tage</dd><dt>Preis</dt><dd>${eur.format(l.price)}</dd><dt>Letzte Senkung</dt><dd>${dr}</dd>` + (recommend(l, days(l) || 0) ? `<dt>Empfehlung</dt><dd>${recommend(l, days(l) || 0)}</dd>` : "") + `</dl></div>`;
   }).join("") || `<div class="empty">Keine Ladenhüter.</div>`;
+}
+
+function renderMonths(){
+  const key = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const M = new Map(), row = k => { if (!M.has(k)) M.set(k, {k, n:0, gross:0, net:0, buy:0, buyN:0, back:0, backN:0}); return M.get(k); };
+  for (const x of D.sales.filter(kidsOk)) { const r = row(key(new Date(x.sold_at))); r.n++; r.gross += x.price; r.net += x.net ?? 0; }
+  for (const p of (D.purchases || []).filter(kidsOk)) { if (p.status === "Storniert") continue; const r = row(key(new Date(p.at))); if (p.status === "Behalten") { r.buy += p.price; r.buyN++; } else { r.back += p.price; r.backN++; } }
+  const R = [...M.values()].sort((a, b) => a.k < b.k ? -1 : 1);
+  const mName = k => { const [y, m] = k.split("-"); return new Date(+y, +m - 1, 1).toLocaleDateString("de-DE", {month:"short", year:"2-digit"}); };
+  const net = sum(R, r => r.net), buy = sum(R, r => r.buy), n = sum(R, r => r.n), bn = sum(R, r => r.buyN), rn = sum(R, r => r.backN);
+  const tiles = [
+    ["Netto Verkäufe", eur0.format(net), `${n} Artikel · Ø ${n ? eur.format(net / n) : "–"}`],
+    ["Ausgaben Käufe", eur0.format(buy), `${bn} behaltene Artikel · Ø ${bn ? eur.format(buy / bn) : "–"}`],
+    ["Bilanz", eur0.format(net - buy), net - buy >= 0 ? "Verkäufe decken die Käufe" : "bisher im Minus"],
+    ["Rücksendequote", bn + rn ? pct(rn / (bn + rn)) : "–", `${rn} von ${bn + rn} gekauften Artikeln zurück`],
+  ];
+  document.getElementById("m-kpis").innerHTML = tiles.map(([k, v, d]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
+  const maxv = Math.max(...R.map(r => Math.abs(r.net)), 1e-9);
+  document.getElementById("m-chart").innerHTML = R.length ? R.map(r => `<div class="hbar"><div class="lab">${mName(r.k)}</div><div class="track"><div class="fill" style="width:${(Math.abs(r.net) / maxv * 100).toFixed(1)}%"></div></div><div class="val">${eur0.format(r.net)}</div></div>`).join("") : '<div class="empty">Keine Daten.</div>';
+  document.getElementById("m-note").textContent = "Zeitraum-Filter gilt hier nicht, Alle/Erwachsene/Kinder/Keine Kleidung schon. Käufe = behaltene Artikel nach Bestelldatum; Rücksendungen sind getrennt gezählt. Bilanz = Netto Verkäufe − Ausgaben für behaltene Käufe (ohne Sellpy-Guthaben).";
+  document.getElementById("m-table").innerHTML = R.length ? `<div style="overflow-x:auto"><table class="tbl" style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th align="left">Monat</th><th align="right">Verkäufe</th><th align="right">Preise</th><th align="right">Netto</th><th align="right">Käufe</th><th align="right">Bilanz</th></tr></thead><tbody>` +
+    [...R].reverse().map(r => `<tr style="border-top:1px solid var(--line)"><td>${mName(r.k)}</td><td align="right">${r.n}</td><td align="right">${eur0.format(r.gross)}</td><td align="right">${eur0.format(r.net)}</td><td align="right">${eur0.format(r.buy)}</td><td align="right" class="${r.net - r.buy < 0 ? "neg" : "pos"}">${eur0.format(r.net - r.buy)}</td></tr>`).join("") + "</tbody></table></div>" : '<div class="empty">Keine Daten.</div>';
 }
 
 function renderQuota(){
@@ -733,6 +782,7 @@ function renderBags(){
   ];
   document.getElementById("t-kpis").innerHTML = tiles.map(([k, v, d]) =>
     `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
+  document.getElementById("t-check").textContent = (D.checks || []).length ? "Abgleich: bei " + D.checks.length + " Tasche(n) weichen die Sellpy-Buchungen von der Rechnung ab: " + D.checks.map(c => dFmt.format(new Date(c.created_at)) + " (" + eur.format(c.diff) + ")").join(", ") : "Abgleich: alle " + D.bags.length + " Taschen stimmen mit den Einzelbuchungen von Sellpy überein (Verkaufspreis, Provision, Anzeigengebühren).";
   document.getElementById("t-note").textContent = `${B.length} Taschen im Zeitraum · Filter Alle/Erwachsene/Kinder gilt hier nicht · Potenzial = offene Preise × Ø-Anteil der bisherigen Verkäufe je Preisklasse`;
   const cls = v => v < 0 ? "neg" : "pos";
   document.getElementById("t-list").innerHTML = [...B].reverse().map(b =>
@@ -756,6 +806,7 @@ function render(){
   if (state.tab === "pend") { renderPend(); return; }
   if (state.tab === "likes") { renderLikes(); return; }
   if (state.tab === "quota") { renderQuota(); return; }
+  if (state.tab === "months") { renderMonths(); return; }
   if (state.tab === "buys") { renderBuys(); return; }
   if (state.tab === "favs") { renderFavs(); return; }
   const S = filtered();
@@ -786,10 +837,12 @@ function render(){
   if (ys.size < 2) document.querySelectorAll('#f-range [data-v^="y"]').forEach(b => b.remove());
 }
 const built = new Date(D.built_at);
+{ const h = (Date.now() - built) / 36e5, el = document.getElementById("stale");
+  if (h > 24) { el.hidden = false; el.textContent = `Achtung: Die Daten sind ${Math.round(h)} Stunden alt. Tippe auf „Aktualisieren“ – oder beende die App und öffne sie neu, falls sie noch eine alte Version zeigt.`; } }
 document.getElementById("stand").textContent = `Stand ${dFmt.format(built)}, ${built.toLocaleTimeString("de-DE", {hour:"2-digit", minute:"2-digit"})} Uhr · ${D.sales.length} Verkäufe · ${(D.purchases || []).length} Käufe · ${D.favs.length} Favoriten`;
 document.getElementById("foot").textContent = "Quelle: dein Sellpy-Konto. Netto = Verkaufspreis minus Sellpy-Provision und Anzeigengebühr, so wie Sellpy es je Artikel bucht. Rücksendungen und Erstattungen bei Käufen kommen direkt von Sellpy. Favoriten: aktuelle Einträge deiner Favoritenliste mit den Angaben aus dem Sellpy-Shop; Artikel, die dort nicht mehr gelistet sind, haben keine Details mehr.";
 if (!D.items.some(i => i.kids) && !D.purchases.some(p => p.kids) && !D.favs.some(f => f.kids)) document.getElementById("f-kids").hidden = true;
-try { const t = localStorage.getItem("selldash-tab"); if (t === "buys" || t === "favs" || t === "bags" || t === "pend" || t === "likes" || t === "quota") document.querySelector(`#f-tab [data-v="${t}"]`).click(); } catch (_) {}
+try { const t = localStorage.getItem("selldash-tab"); if (t === "buys" || t === "favs" || t === "bags" || t === "pend" || t === "likes" || t === "quota" || t === "months") document.querySelector(`#f-tab [data-v="${t}"]`).click(); } catch (_) {}
 render();
 let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(render, 150); });
 
@@ -800,17 +853,16 @@ let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(ren
   const get = () => { try { return localStorage.getItem(KEY) || ""; } catch (e) { return ""; } };
   const put = v => { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch (e) {} };
   const api = (path, opt = {}) => fetch("https://api.github.com/repos/" + REPO + path, Object.assign({
-    headers: { "Accept": "application/vnd.github+json", "Authorization": "Bearer " + get(), "X-GitHub-Api-Version": "2022-11-28" }
+    headers: { "Accept": "application/vnd.github+json", "Authorization": "Bearer " + token(), "X-GitHub-Api-Version": "2022-11-28" }
   }, opt));
   const say = (t, err) => { msg.textContent = t; msg.className = err ? "err" : ""; };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const tokpanel = document.getElementById("tokpanel"), tokin = document.getElementById("tokin");
+  const token = () => get() || D.gh_token || "";
+  document.getElementById("toksave").addEventListener("click", () => { const v = tokin.value.trim().replace(/^["']|["']$/g, ""); if (v) { put(v); tokpanel.hidden = true; tokin.value = ""; run(); } });
+  document.getElementById("tokcancel").addEventListener("click", () => { tokpanel.hidden = true; });
   async function run() {
-    let tok = get();
-    if (!tok) {
-      tok = (prompt("Einmalig: GitHub-Token (fine-grained, nur Repo sellpy, Berechtigung „Actions: Read and write“) einfügen.\nAbbrechen = Seite nur neu laden.") || "").trim().replace(/^["']|["']$/g, "");
-      if (!tok) { location.replace(location.pathname + "?r=" + Date.now()); return; }
-      put(tok);
-    }
+    if (!token()) { tokpanel.hidden = false; tokin.focus(); return; }
     btn.disabled = true; btn.textContent = "↻ Läuft …";
     try {
       const t0 = Date.now() - 60000;

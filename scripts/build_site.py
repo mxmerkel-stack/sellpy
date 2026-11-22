@@ -257,6 +257,18 @@ def transform(raw):
                          "demography": flat(meta.get("demography")), "kids": bool(kids), "price": amount, "dropped": bool((h or {}).get("price_drop")),
                          "likes": (h or {}).get("fav_count"), "reserved": bool((h or {}).get("reserved")), "p2p": bool((h or {}).get("p2p")),
                          "listed_at": ((h or {}).get("sale_started") or 0) / 1000 or None, "bought": bought.get(iid)})
+    # Abgleich: Buchungen je Verkauf (Tasche) gegen die Taschenrechnung
+    led = {}
+    for t in raw.get("balance", []):
+        sid = (t.get("sale") or {}).get("objectId")
+        if sid and t.get("item"):
+            led[sid] = led.get(sid, 0) + t["delta"]["amount"] / 100
+    checks = []
+    for b in bags:
+        calc = b["gross"] - b["commission"] - b["ad_fee"] - b["unsold_fee"]
+        diff = round(led.get(b["id"], 0) - calc, 2)
+        if abs(diff) > 0.01:
+            checks.append({"id": b["id"], "created_at": b["created_at"], "diff": diff, "ledger": round(led.get(b["id"], 0), 2), "calc": round(calc, 2)})
     # Eigene Online-Artikel mit Likes (Likes kommen aus der Sellpy-Suche; Preisverlauf aus unseren eigenen Abrufen)
     by_id = {r["id"]: r for r in items}
     ptrack = raw.get("price_track") or {}
@@ -283,7 +295,7 @@ def transform(raw):
     return {"items": items, "sales": sorted(sales, key=lambda s: s["sold_at"] or ""), "bags": sorted(bags, key=lambda b: b["created_at"] or ""),
             "payouts": payouts, "unsold_fees": unsold_fees, "credits": credits, "credit_now": raw.get("credit_now"), "other_tx_types": other_types, "purchases": sorted(purchases, key=lambda r: r["at"] or ""),
             "orders": sorted(orders, key=lambda r: r["at"] or ""),
-            "pending": sorted(pending, key=lambda r: r["sold_at"] or ""), "ad_fee_unit": ad_fee_unit, "lag_median": lag_median, "lag_n": len(lags), "likes": likes,
+            "pending": sorted(pending, key=lambda r: r["sold_at"] or ""), "ad_fee_unit": ad_fee_unit, "gh_token": os.environ.get("DISPATCH_TOKEN", "").strip() or None, "checks": checks, "lag_median": lag_median, "lag_n": len(lags), "likes": likes,
             "wish": sorted(wish_events, key=lambda e: e["at"] or ""), "favs": sorted(favs, key=lambda e: e["at"] or ""),
             "fetched_at": raw.get("fetched_at")}
 
