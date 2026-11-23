@@ -127,7 +127,7 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
       <button data-v="likes">Likes</button>
       <button data-v="quota">Quote</button>
       <button data-v="months">Monate</button>
-      <button data-v="status">Status</button>
+      <button data-v="status">Zustand</button>
     </div>
   </div>
   <div class="filters" role="group" aria-label="Filter" style="margin-top:-6px">
@@ -279,6 +279,12 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
   </div>
 
   <div id="tab-status" hidden>
+    <div class="grid2">
+      <div class="card"><h2>Artikelzustand: eingestellt</h2><div class="note">alle deine Artikel</div><div id="z-all"></div></div>
+      <div class="card"><h2>Artikelzustand: verkauft</h2><div class="note">verkaufte Artikel</div><div id="z-sold"></div></div>
+      <div class="card"><h2>Artikelzustand: gekauft</h2><div class="note">was du bestellt hast (ohne Stornos)</div><div id="z-buy"></div></div>
+      <div class="card"><h2>Verkaufsquote nach Zustand</h2><div class="note">verkauft von eingestellten Artikeln, offene zählen als nicht verkauft</div><div id="z-quota"></div></div>
+    </div>
     <section class="kpis" id="s-kpis"></section>
     <div class="card"><h2>Zustände deiner Artikel</h2><div class="note" id="s-note"></div><div id="s-list"></div></div>
     <div class="card"><h2>Zustände pro Tasche</h2><div class="note">Anzahl der Artikel je Zustand</div><div id="s-bags"></div></div>
@@ -708,7 +714,36 @@ const RAW_INFO = {
   rejected: ["Abgelehnt", "Von Sellpy abgelehnt."], nekad: ["Abgelehnt", "Von Sellpy abgelehnt."], lost: ["Verloren", "Als verloren geführt."],
 };
 const RAW_ORDER = ["utlagd", "betald", "såld", "skänkt", "skänktDirekt", "tillbakaskickadDirekt", "tillbakaskickad", "returnerad", "återlämnad", "sentBack", "processing", "registrerad", "awaitingApproval", "awaitingChangeRequestReview", "vilande", "borttagen", "rejected", "nekad", "lost"];
+const COND_ORDER = ["Neuwertig", "Sehr gut", "Gut", "Akzeptabel", "Schlecht", "Unbekannt"];
+const COND_COL = {"Neuwertig":"#2f8f5b", "Sehr gut":"#3b82d6", "Gut":"#e0a100", "Akzeptabel":"#d9722e", "Schlecht":"#c0443e", "Unbekannt":"#8a8f98"};
+function pie(id, rows){
+  const el = document.getElementById(id), tot = sum(rows, r => r.v);
+  if (!tot) { el.innerHTML = '<div class="empty">Keine Daten.</div>'; return; }
+  const R = 70, C = 80, W = 22; let a0 = -Math.PI / 2, segs = "";
+  const pt = (a, r) => `${(C + r * Math.cos(a)).toFixed(2)},${(C + r * Math.sin(a)).toFixed(2)}`;
+  for (const r of rows.filter(r => r.v > 0)) {
+    const da = r.v / tot * 2 * Math.PI, tip = `<title>${esc(r.label)}: ${r.v} (${pct(r.v / tot)})</title>`;
+    if (r.v === tot) { segs += `<circle cx="${C}" cy="${C}" r="${R - W / 2}" fill="none" stroke="${r.color}" stroke-width="${W}">${tip}</circle>`; break; }
+    const a1 = a0 + da, big = da > Math.PI ? 1 : 0;
+    segs += `<path d="M${pt(a0, R)} A${R},${R} 0 ${big} 1 ${pt(a1, R)} L${pt(a1, R - W)} A${R - W},${R - W} 0 ${big} 0 ${pt(a0, R - W)} Z" fill="${r.color}" stroke="var(--bg, #111)" stroke-width="1.5">${tip}</path>`;
+    a0 = a1;
+  }
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><svg viewBox="0 0 160 160" width="150" height="150" role="img" aria-label="Kreisdiagramm">${segs}<text x="${C}" y="${C - 2}" text-anchor="middle" font-size="22" font-weight="600" fill="currentColor">${tot}</text><text x="${C}" y="${C + 14}" text-anchor="middle" font-size="10" fill="currentColor" opacity=".7">Artikel</text></svg>` +
+    `<div style="font-size:13px;line-height:1.7">${rows.filter(r => r.v > 0).map(r => `<div><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${r.color};margin-right:6px"></span>${esc(r.label)} · ${r.v} · ${pct(r.v / tot)}</div>`).join("")}</div></div>`;
+}
+const condRows = list => COND_ORDER.map(c => ({label:c, color:COND_COL[c], v:list.filter(x => (x.condition || "Unbekannt") === c).length}));
+function renderCond(){
+  const I = D.items.filter(i => kidsOk(i) && inPeriod(new Date(i.created_at)));
+  const listed = I.filter(i => i.outcome);
+  pie("z-all", condRows(I));
+  pie("z-sold", condRows(I.filter(i => i.outcome === "sold")));
+  pie("z-buy", condRows((D.purchases || []).filter(p => kidsOk(p) && p.status !== "Storniert")));
+  const q = COND_ORDER.map(c => { const r = listed.filter(i => (i.condition || "Unbekannt") === c), sd = r.filter(i => i.outcome === "sold").length;
+    return {label:c, n:r.length, s:sd, v:r.length ? sd / r.length : 0}; }).filter(r => r.n);
+  hbars("z-quota", q, r => `${pct(r.v)} · ${r.s}/${r.n}`, r => `<b>${esc(r.label)}</b><br>${r.s} verkauft von ${r.n} eingestellten · ${pct(r.v)}`);
+}
 function renderStatus(){
+  renderCond();
   const I = D.items.filter(i => kidsOk(i) && inPeriod(new Date(i.created_at)));
   const G = new Map();
   for (const i of I) { const k = i.raw || "?"; const g = G.get(k) || {k, n:0, p:0}; g.n++; g.p += i.price || 0; G.set(k, g); }
