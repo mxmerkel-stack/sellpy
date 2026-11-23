@@ -119,7 +119,7 @@ def transform(raw):
         size = nice_size(raw_size)
         row = {"id": it["objectId"], "brand": brand, "kind": kind, "size": size, "condition": flat(meta.get("condition")),
                "category": category(flat(meta.get("type"))), "kids": is_kids(meta, raw_size), "demography": flat(meta.get("demography")), "price": price,
-               "status": STATUS.get(status, status or "Unbekannt"), "bag": (it.get("bag") or {}).get("objectId"),
+               "status": STATUS.get(status, status or "Unbekannt"), "raw": status or "", "bag": (it.get("bag") or {}).get("objectId"),
                "created_at": it.get("createdAt")}
         items.append(row)
         if sold_tx or status in SOLD:
