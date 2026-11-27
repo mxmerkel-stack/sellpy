@@ -36,6 +36,10 @@ header h1{font-size:22px;margin:0}
 .inhalt summary{cursor:pointer;font-size:13px;padding:6px 0;color:var(--text-secondary)}
 .irow{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
 .irow-s{font-size:11px;color:var(--text-secondary)}.irow-r{text-align:right;white-space:nowrap}
+#prog{margin:0 0 12px}
+.pbar{height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+.pbar i{display:block;height:100%;width:0;border-radius:99px;background:#3b82d6;transition:width .9s linear}
+.plab{font-size:12px;color:var(--text-secondary);margin-top:5px;display:flex;justify-content:space-between;gap:10px}
 #stale{background:#4a3b00;color:#ffd666;border-radius:9px;padding:8px 10px;font-size:13px;margin:4px 0 10px}
 #refmsg.err{color:#ff8a80;font-size:14px;border:1px solid #ff8a80;border-radius:9px;padding:8px 10px;margin:4px 0 10px}
 header .sub{color:var(--text-secondary);font-size:13px;margin-top:2px}
@@ -109,6 +113,7 @@ tr.sub td{background:var(--bg);font-size:12px;white-space:normal}
   </header>
   <div id="stale" hidden></div>
   <div id="refmsg"></div>
+  <div id="prog" hidden><div class="pbar"><i></i></div><div class="plab"></div></div>
   <div id="tokpanel" class="card" hidden>
     <h2>GitHub-Token einmalig hinterlegen</h2>
     <div class="note">Der Knopf startet die Aktualisierung bei GitHub. Dafür braucht er einen Token: github.com → Settings → Developer settings → Fine-grained tokens → Generate. Nur Repo <b>sellpy</b>, Berechtigung <b>Actions: Read and write</b>. Der Token bleibt nur in diesem Browser gespeichert.</div>
@@ -978,22 +983,53 @@ let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(ren
           : "";
         throw new Error("GitHub-Fehler " + r.status + (m ? ": " + m : "") + ". " + hint);
       }
-      say("Aktualisierung gestartet – dauert ca. 3–5 Minuten, die Seite lädt danach selbst neu.");
-      for (let i = 0; i < 60; i++) {
-        await sleep(10000);
-        const q = await api("/actions/workflows/" + WF + "/runs?event=workflow_dispatch&per_page=5");
-        if (!q.ok) continue;
-        const runs = ((await q.json()).workflow_runs || []).filter(x => new Date(x.created_at).getTime() >= t0);
-        if (!runs.length) continue;
-        const ok = runs.find(x => x.status === "completed" && x.conclusion === "success");
-        const active = runs.find(x => x.status !== "completed");
-        if (ok && !active) { say("Fertig – lade die neue Version …"); await sleep(15000); try { await fetch(location.pathname, { cache: "reload" }); } catch (e) {} location.replace(location.pathname + "?r=" + Date.now()); return; }
-        if (active) { say("Status: " + (active.status === "in_progress" ? "läuft" : "wartet") + " …"); continue; }
-        if (runs.every(x => x.status === "completed" && x.conclusion !== "success" && x.conclusion !== "cancelled")) throw new Error("Aktualisierung fehlgeschlagen (" + runs[0].conclusion + ").");
+      say("");
+      const prog = document.getElementById("prog"), fill = prog.querySelector("i"), plab = prog.querySelector(".plab");
+      const show = (pctv, text) => { prog.hidden = false; fill.style.width = Math.max(2, Math.min(100, pctv)) + "%"; plab.innerHTML = `<span>${text}</span><span>${Math.round(Math.min(100, pctv))} %</span>`; };
+      const W = {"Set up job":2, "Run actions/checkout@v4":1, "Run actions/setup-python@v5":1, "Abhängigkeiten":20, "Verlauf laden (verschlüsselt)":1, "Daten bei Sellpy abrufen":35,
+        "Verlauf speichern (verschlüsselt)":1, "Seite bauen und verschlüsseln":2, "Run actions/upload-pages-artifact@v3":2, "Run actions/deploy-pages@v4":7};
+      const L = {"Set up job":"Vorbereitung", "Run actions/checkout@v4":"Code laden", "Run actions/setup-python@v5":"Python einrichten", "Abhängigkeiten":"Programme installieren",
+        "Verlauf laden (verschlüsselt)":"Verlauf laden", "Daten bei Sellpy abrufen":"Daten bei Sellpy abrufen", "Verlauf speichern (verschlüsselt)":"Verlauf sichern",
+        "Seite bauen und verschlüsseln":"Dashboard bauen", "Run actions/upload-pages-artifact@v3":"Seite hochladen", "Run actions/deploy-pages@v4":"Seite veröffentlichen"};
+      const wOf = n => W[n] ?? (/^(Post Run|Complete job)/.test(n) ? 0 : 2);
+      const WF_END = 88; // Rest: Wartezeit, bis die neue Seite ausgeliefert wird
+      show(2, "Wartet auf Start …");
+      let runId = null, done = false;
+      for (let i = 0; i < 150 && !done; i++) {
+        await sleep(i ? 3000 : 2500);
+        if (!runId) {
+          const q = await api("/actions/workflows/" + WF + "/runs?event=workflow_dispatch&per_page=5");
+          if (!q.ok) continue;
+          const run = ((await q.json()).workflow_runs || []).find(x => new Date(x.created_at).getTime() >= t0 && x.conclusion !== "cancelled");
+          if (!run) continue;
+          runId = run.id;
+        }
+        const rr = await api("/actions/runs/" + runId);
+        if (!rr.ok) continue;
+        const run = await rr.json();
+        if (run.status === "completed") {
+          if (run.conclusion !== "success") throw new Error("Aktualisierung fehlgeschlagen (" + run.conclusion + "). Details unter github.com/" + REPO + "/actions.");
+          done = true; break;
+        }
+        if (run.status !== "in_progress") { show(5, "Wartet auf einen freien Platz bei GitHub …"); continue; }
+        const jr = await api("/actions/runs/" + runId + "/jobs");
+        if (!jr.ok) continue;
+        const steps = (((await jr.json()).jobs || [])[0] || {}).steps || [];
+        const total = sum(steps, x => wOf(x.name)) || 1;
+        let got = 0, cur = null;
+        for (const x of steps) {
+          const w = wOf(x.name);
+          if (x.status === "completed") got += w;
+          else if (x.status === "in_progress") { cur = x; got += w * Math.min(0.9, (Date.now() - new Date(x.started_at)) / (Math.max(w, 1) * 1000)); }
+        }
+        show(5 + got / total * (WF_END - 5), cur ? (L[cur.name] || cur.name) + " …" : "Weiter …");
       }
-      throw new Error("Zeitüberschreitung – bitte später neu laden.");
+      if (!done) throw new Error("Zeitüberschreitung – bitte später neu laden.");
+      for (let k = 0; k <= 15; k++) { show(WF_END + (100 - WF_END) * k / 15, "Neue Version wird geladen …"); await sleep(1000); }
+      try { await fetch(location.pathname, { cache: "reload" }); } catch (e) {}
+      location.replace(location.pathname + "?r=" + Date.now()); return;
     } catch (e) {
-      say(e.message, true); btn.disabled = false; btn.textContent = "↻ Aktualisieren";
+      document.getElementById("prog").hidden = true; say(e.message, true); btn.disabled = false; btn.textContent = "↻ Aktualisieren";
     }
   }
   btn.addEventListener("click", run);
